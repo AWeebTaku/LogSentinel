@@ -1,0 +1,21 @@
+# Dataset + split settings. Paths are relative to the repo root.
+raw_dir: data/raw
+processed_dir: data/processed
+
+# Chronological split over sessions (no shuffling => no future leakage).
+# Train uses only NORMAL sessions from the train slice (unsupervised setting).
+split:
+  mode: chronological   # or: random (robustness check, see docs/threats-to-validity.md)
+  seed: 42
+  train: 0.6
+  val: 0.1      # used for threshold tuning (E3); rest is test
+
+hdfs:
+  session: block_id            # one session = all lines sharing a blk_ id
+bgl:
+  window_seconds: 3600         # fixed time windows; window label = any anomalous line
+  min_lines: 1
+thunderbird:
+  max_lines: 20000000          # first N lines only (~2-3 weeks of logs, ~3 GB raw)
+  window_seconds: 3600
+  min_lines: 1

@@ -1,0 +1,34 @@
+[project]
+name = "logsentinel"
+version = "0.1.0"
+description = "Real-time log anomaly detection pipeline + research experiment harness"
+requires-python = ">=3.12"
+# Minimal on purpose; later weeks add kafka/fastapi/streamlit/drain3 as extras when first used.
+dependencies = ["numpy", "scipy", "pandas", "scikit-learn", "pyyaml", "drain3", "matplotlib",
+			   "fastapi", "uvicorn", "confluent-kafka"]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+logsentinel-download = "logsentinel.data.download:main"
+logsentinel-build = "logsentinel.data.build:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-m 'not e2e'"
+markers = ["e2e: needs a running Kafka (scripts/kafka.sh start); recreates the logs-raw/alerts-critical topics"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"src/logsentinel/api/*" = ["B008"]   # FastAPI's Depends()/Query() defaults are the framework idiom

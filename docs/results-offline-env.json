@@ -1,0 +1,14 @@
+{
+  "python": "3.12.14",
+  "os": "Linux-7.2.7-arch1-1-x86_64-with-glibc2.44",
+  "cpu": "Intel(R) Core(TM) i5-7400 CPU @ 3.00GHz",
+  "cpu_count": 4,
+  "mem_gb": 15.5,
+  "packages": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "scikit-learn": "1.9.1",
+    "pyyaml": "6.0.3"
+  },
+  "git": "d01886c"
+}

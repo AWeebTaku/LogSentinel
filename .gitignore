@@ -1,0 +1,49 @@
+# Python environments, caches, and build output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+
+# Frontend dependencies and generated bundle (keep package-lock.json)
+ui/node_modules/
+ui/dist/
+
+# Downloaded or generated datasets, features, and replay data
+/data/raw/
+/data/processed/
+/data/features/
+/data/replay/
+
+# Locally trained model bundles and experiment output
+/models/
+/results/
+/docs/stream-runs/
+
+# Generated paper exports; keep the build scripts and source documentation
+/paper/*.docx
+/paper/*.pptx
+
+# Local database, environment settings, and logs
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
