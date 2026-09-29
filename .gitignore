@@ -12,6 +12,7 @@ __pycache__/
 htmlcov/
 build/
 dist/
+.claude_session
 
 # Frontend dependencies and generated bundle (keep package-lock.json)
 ui/node_modules/
