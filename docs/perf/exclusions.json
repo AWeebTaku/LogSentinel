@@ -1,3 +1,0 @@
-{
-  "e5d/load25.rep0": "first run after a broker restart (cold broker): p99 935 ms; reproduced in 3 of 3 restarts (see the E5 cold-start section)"
-}

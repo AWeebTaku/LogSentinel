@@ -1,89 +1,169 @@
 # LogSentinel
 
-LogSentinel is a real-time log anomaly detection application and research harness. It includes a FastAPI service,
-a React/TypeScript operations UI, Kafka-backed streaming, model training, and offline experiments.
+LogSentinel is a real-time log anomaly detection system. It ingests a stream of application/system
+logs, parses and vectorizes them, scores them with unsupervised machine-learning models (trained
+only on normal traffic — no labeled attacks required), and raises alerts through a REST API and a
+web dashboard.
+
+## Features
+
+- **Streaming ingestion** over Apache Kafka: a replayable producer feeds raw log lines through a
+  parsing → feature-extraction → scoring pipeline in real time.
+- **Unsupervised detection**: Isolation Forest, PCA reconstruction error, and a small autoencoder,
+  all trained on normal sessions only, behind one common model interface.
+- **Log template parsing** with Drain, so scoring is robust to the noisy, high-cardinality text
+  in raw log lines.
+- **Operator web UI** (React + IBM Carbon) with a live dashboard, an alert inbox (acknowledge /
+  resolve / mark false-positive), source/replay controls, and model management.
+- **REST API** (FastAPI) backing the UI and available for external integration — see
+  [docs/api.md](docs/api.md).
+- **SQLite storage** for alerts, model registry, and run metadata — no external database needed.
+- **One-command launcher** (`main.py`) that builds the UI, starts Kafka, and starts the API.
+
+## Architecture
+
+```
+producer/replay → Kafka (logs-raw) → parsing (Drain) → feature extraction → model scoring
+                                                                                  │
+                                                                                  ▼
+                                                                          alerts-critical (Kafka)
+                                                                                  │
+                                                                                  ▼
+                                                              alert sink → SQLite ← FastAPI ← Web UI
+```
+
+A trained model bundle (parser + vectorizer + detector + threshold) is produced offline by
+`logsentinel.models.train` and loaded by the streaming engine at runtime; the UI and API can
+promote a new bundle without restarting the stream.
 
 ## Requirements
 
-- Python 3.12 or newer
-- Node.js and npm (Vite 8 requires a current Node.js release)
-- Linux x86-64 for the included user-space Kafka bootstrap script; alternatively, use Docker Compose
+- **Python 3.12+**
+- **Node.js + npm** (for building the web UI; a current LTS release)
+- **Java 17** for Kafka — on Linux x86-64, `main.py` downloads and verifies a private copy
+  automatically; other platforms need Java installed manually or via Docker (see below)
+- ~250 MB free disk space if you plan to download the sample datasets for training
 
-The UI and API can run without datasets, trained models, or Kafka. Dataset downloads and generated models are only
-needed for model training and streaming demos.
+## Setup
 
-## Quick start
-
-From a fresh clone, create an isolated Python environment and install the project:
+### Linux (x86-64) — native, recommended
 
 ```bash
+git clone <this-repo-url> logsentinel
+cd logsentinel
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements.txt -e .
 ```
 
-Start the UI and API without Kafka:
-
-```bash
-python main.py --no-streaming
-```
-
-Open <http://127.0.0.1:8000>. The API's interactive documentation is at <http://127.0.0.1:8000/docs>.
-The launcher installs UI dependencies from `ui/package-lock.json` and builds the UI on its first run. You can also
-build it explicitly with `cd ui && npm ci && npm run build`.
-
-## Enable streaming
-
-The default launcher starts the full local stack, including Kafka and the alert sink:
+Run everything (UI build + Kafka + API):
 
 ```bash
 python main.py
 ```
 
-On Linux x86-64, the launcher bootstraps checksum-verified Java 17 and Kafka 3.9.1 under
-`~/.local/share/logsentinel` the first time. To manage Kafka separately, run `scripts/kafka.sh setup` once, then
-`scripts/kafka.sh start` and `scripts/kafka.sh stop`. Docker Compose is also provided in `docker-compose.yml`.
+Then open <http://127.0.0.1:8000>. The launcher downloads a checksum-verified Java 17 + Kafka
+3.9.1 under `~/.local/share/logsentinel` on first run, builds the UI if needed, and prints a
+"ready" message once the API is up.
 
-## Optional: data and model
-
-Download and prepare the HDFS and BGL datasets (about 244 MB combined):
+To run without Kafka/streaming (UI + API only):
 
 ```bash
-make data
+python main.py --no-streaming
 ```
 
-Train an HDFS model bundle for streaming:
+### macOS
+
+Native Kafka bootstrap (`scripts/kafka.sh`) targets Linux. On macOS, use Docker Compose for Kafka
+and run the app itself natively. (`docker-compose.yml` has not been exercised on a real Mac by
+the maintainer — the tested path is `scripts/kafka.sh` on Linux — but its config is a standard
+single-node KRaft broker on the same port the app expects.)
 
 ```bash
+git clone <this-repo-url> logsentinel
+cd logsentinel
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -e .
+
+docker compose up -d          # starts Kafka on 127.0.0.1:9092
+python main.py --no-streaming # start the UI/API
+# once Kafka is confirmed up, streaming features (Source page, live engine) work
+# against it without needing scripts/kafka.sh
+```
+
+(Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) for macOS.)
+
+### Windows
+
+The native Kafka bootstrap script is a Bash script using Linux-only process controls, so Windows
+needs one of:
+
+- **WSL2 (recommended)**: install a WSL2 Ubuntu distribution, then follow the **Linux** steps
+  above inside it.
+- **Docker Desktop + native Python**: follow the **macOS** steps above — Docker Compose for Kafka,
+  native `python main.py --no-streaming` for the app — from PowerShell or Command Prompt.
+
+## Optional: datasets and model training
+
+Streaming and the Source/Models UI pages need a trained model bundle. Download the sample dataset
+and train one:
+
+```bash
+make data      # downloads and prepares HDFS/BGL sample data (~244 MB)
 python -m logsentinel.models.train --dataset hdfs --parser drain --model pca
 python -m logsentinel.stream.pools
 ```
 
-Thunderbird is a much larger, opt-in dataset. See the downloader options with
-`python -m logsentinel.data.download --help` before requesting it.
-
-## Development checks
+## Testing
 
 ```bash
-make test
-make lint
+make test                            # Python unit tests
+make lint                            # ruff
 cd ui && npm test && npm run typecheck
+pytest -m e2e                        # needs a running Kafka broker
 ```
 
-End-to-end tests require a running Kafka broker: `pytest -m e2e`.
+## Project structure
 
-## Project notes
+```
+logsentinel/
+├── main.py                  # one-command launcher: builds UI, starts Kafka, starts the API
+├── pyproject.toml           # package metadata + dependency list (pip install -e .)
+├── requirements.txt         # plain pip-installable dependency list
+├── Makefile                 # make data / make test / make lint / make ui shortcuts
+├── docker-compose.yml       # Kafka via Docker, for platforms without scripts/kafka.sh
+├── scripts/kafka.sh         # native (no-Docker) Kafka bootstrap for Linux x86-64
+├── configs/data.yaml        # dataset download/split configuration
+├── docs/
+│   ├── api.md               # REST API endpoints and lifecycle
+│   └── ui.md                # UI behavior and local frontend development
+├── src/logsentinel/         # the application package
+│   ├── data/                 # dataset download, HDFS/BGL loaders, session building, splits
+│   ├── parsing/               # log line normalization and Drain-based template parsing
+│   ├── features/              # TF-IDF / count vectorization over parsed templates
+│   ├── models/                # detector implementations, thresholds, training, model registry
+│   ├── stream/                 # Kafka producer/consumer, the streaming engine, session state
+│   ├── alerts/                 # the alert sink service that persists detections
+│   ├── api/                     # FastAPI app: alerts, models, runs, serves the built UI
+│   ├── store/                   # SQLite access layer
+│   ├── common/                  # shared config, logging, environment-capture helpers
+│   └── experiments/             # offline evaluation and benchmark harness (used to produce
+│                                 # the research results; not required to run the application)
+├── ui/                       # React + TypeScript + IBM Carbon web frontend (built by main.py)
+│   ├── src/                   # pages, components, API client
+│   └── e2e/smoke.mjs          # Playwright end-to-end smoke test
+└── tests/                    # pytest unit and integration tests
+```
 
-- Data processing and split settings: [configs/data.yaml](configs/data.yaml)
-- API endpoints and lifecycle: [docs/api.md](docs/api.md)
-- UI behavior and local development: [docs/ui.md](docs/ui.md)
-- Dataset caveats: [docs/threats-to-validity.md](docs/threats-to-validity.md)
-- Research plan: [PLAN.md](PLAN.md)
+`src/logsentinel/experiments/` and its outputs, the research paper, the defense deck, and detailed
+experiment result docs are kept in the project's private/thesis copy and are not part of this
+public repository — they aren't needed to install or run the application.
 
 ## Deployment note
 
-GitHub Pages cannot host the complete application: LogSentinel requires a Python API, Kafka for streaming, and
-persistent storage for the database and model bundles. The API currently has no authentication and is intended for
-local use; do not expose it directly to the public internet. A public deployment needs an authenticated HTTPS
-reverse proxy, secured Kafka connectivity, and persistent storage configured for the API, models, and database.
+LogSentinel is built for local/trusted-network use: the API has no authentication. A public
+deployment would need an authenticated HTTPS reverse proxy, secured Kafka connectivity, and
+persistent storage configured for the API, models, and database — none of that is set up here.

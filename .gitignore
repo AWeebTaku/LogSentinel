@@ -28,9 +28,20 @@ ui/dist/
 /results/
 /docs/stream-runs/
 
-# Generated paper exports; keep the build scripts and source documentation
-/paper/*.docx
-/paper/*.pptx
+# Research-only artifacts: not needed to set up or run the application.
+# Kept on disk for the thesis; excluded from the public GitHub repo.
+/paper/
+/PLAN.md
+/docs/RESUME.md
+/docs/demo-script.md
+/docs/citations.md
+/docs/threats-to-validity.md
+/docs/results-*.md
+/docs/results-*.json
+/docs/ablations/
+/docs/drift/
+/docs/perf/
+/ui/e2e/shots/
 
 # Local database, environment settings, and logs
 *.db

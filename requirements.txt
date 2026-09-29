@@ -1,0 +1,21 @@
+# Core runtime dependencies for LogSentinel (application + streaming engine).
+# Hand-maintained against actual `import` usage in src/logsentinel — not a
+# `pip freeze` dump. Install with: pip install -r requirements.txt
+# (or `pip install -e .` via pyproject.toml, which this file mirrors.)
+
+numpy>=2.5
+scipy>=1.18
+pandas>=3.0
+scikit-learn>=1.9
+joblib>=1.6
+pyyaml>=6.0
+drain3>=0.9.11
+matplotlib>=3.11
+fastapi>=0.141
+uvicorn>=0.54
+pydantic>=2.13
+confluent-kafka>=2.15
+
+# Not included: pyspark. It is only used by the research-only Spark
+# comparison engine (src/logsentinel/stream/spark_engine.py), imported
+# lazily and never reachable from the main API or UI.
