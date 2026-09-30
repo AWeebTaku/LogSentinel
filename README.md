@@ -228,7 +228,7 @@ Same on every platform once Python and Node are ready. On native Windows PowerSh
 if that's what `winget`/the installer put on your PATH.
 
 ```bash
-git clone https://github.com/AWeebTaku/logsentinel.git logsentinel
+git clone https://github.com/AWeebTaku/LogSentinel.git logsentinel
 cd logsentinel
 
 python3.12 -m venv .venv
