@@ -12,7 +12,6 @@ __pycache__/
 htmlcov/
 build/
 dist/
-.claude_session
 
 # Frontend dependencies and generated bundle (keep package-lock.json)
 ui/node_modules/
@@ -37,12 +36,17 @@ ui/dist/
 /docs/demo-script.md
 /docs/citations.md
 /docs/threats-to-validity.md
+/docs/personal-reference.md
 /docs/results-*.md
 /docs/results-*.json
 /docs/ablations/
 /docs/drift/
 /docs/perf/
 /ui/e2e/shots/
+
+# Ad-hoc local verification scripts/screenshots (not part of app setup or usage)
+/ui/tour.mjs
+/ui/tour-shots/
 
 # Local database, environment settings, and logs
 *.db
