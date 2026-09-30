@@ -87,6 +87,7 @@ repository — they aren't needed to install or run the application.
 | **git** | cloning the repo | |
 | **~250 MB free disk** | sample datasets (HDFS_v1 + BGL) | only needed if you train a model / run streaming |
 | **~1.5 GB free disk** | Python venv + Node modules + Kafka/JDK download | |
+| **~3 GB free disk, optional** | Thunderbird dataset | only if you opt into it — not needed for streaming/the demo, offline experiments only |
 
 **Supported setups at a glance:**
 
@@ -337,11 +338,27 @@ python -m logsentinel.data.download      # downloads data/raw/{HDFS_v1,BGL}.zip,
 python -m logsentinel.data.build         # writes data/processed/*.sessions.jsonl.gz (train/val/test splits)
 ```
 
-`download.py` also supports fetching a subset or the optional (much larger) Thunderbird dataset:
+`download.py` also supports fetching a subset, or the optional, much larger Thunderbird dataset:
 
 ```bash
-python -m logsentinel.data.download --only hdfs            # just HDFS_v1
-python -m logsentinel.data.download --only thunderbird --tb-lines 20000000   # opt-in, streamed, no full download
+python -m logsentinel.data.download --only hdfs      # just HDFS_v1 (~187 MB)
+python -m logsentinel.data.download --only bgl        # just BGL (~57 MB)
+```
+
+**Thunderbird is opt-in and not needed for streaming, training, or the demo** — HDFS is the only
+dataset the live app (Source/Models/streaming) actually uses. It's only relevant if you want to
+reproduce the offline detection-quality experiments (`logsentinel.experiments.offline`) across all
+three datasets. It's also much bigger: the full corpus is ~2 GB compressed / ~30 GB raw, so
+`download.py` streams only a configurable line prefix and stops — no MD5 check, since the archive is
+never fully read. The default prefix (`configs/data.yaml`, `thunderbird.max_lines`) is 20,000,000
+lines (~2-3 weeks of logs), which downloads to **~3 GB** on disk:
+
+```bash
+python -m logsentinel.data.download --only thunderbird          # uses the configured default (20M lines)
+python -m logsentinel.data.build --only thunderbird              # writes data/processed/thunderbird.*.sessions.jsonl.gz
+
+# or a smaller/larger prefix explicitly:
+python -m logsentinel.data.download --only thunderbird --tb-lines 5000000
 ```
 
 Train a model bundle (default: HDFS_v1, Drain parser, PCA detector, validation-tuned threshold):
@@ -406,6 +423,10 @@ pytest -m e2e                          # needs a running Kafka broker (scripts/k
 - **`make data` fails partway through a download** — the download is resumable and MD5-checked;
   just re-run `make data` (or `python -m logsentinel.data.download`). It skips files that already
   match the expected checksum and only re-fetches the incomplete one.
+- **Thunderbird download interrupted** — it's streamed rather than MD5-checked (the full archive is
+  never read), and only renames its output into place once the requested line count is fully read.
+  An interrupted run leaves no corrupt `Thunderbird.log`, just an incomplete `.part` file — re-run
+  `python -m logsentinel.data.download --only thunderbird` from scratch.
 - **`pip install confluent-kafka` fails to build** — this usually means no prebuilt wheel exists
   for your exact platform/Python combination and it's falling back to a source build that needs
   `librdkafka`. Install it via your package manager first (`sudo apt install librdkafka-dev` /
