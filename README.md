@@ -20,7 +20,7 @@ quality are things the app actually produces, not numbers asserted in a slide de
 - **Operator web UI** (React + IBM Carbon) with a live dashboard, an alert inbox (acknowledge /
   resolve / mark false-positive), source/replay controls, and model management.
 - **REST API** (FastAPI) backing the UI and available for external integration — see
-  [docs/api.md](docs/api.md) and [docs/ui.md](docs/ui.md).
+  [docs/app/api.md](docs/app/api.md) and [docs/app/ui.md](docs/app/ui.md).
 - **SQLite storage** for alerts, the model registry, and run metadata — no external database to
   stand up.
 - **One-command launcher** (`main.py`) that builds the UI, brings up Kafka, and starts the API.
@@ -53,8 +53,9 @@ logsentinel/
 ├── scripts/kafka.sh         # native (no-Docker) Kafka bootstrap for Linux x86-64
 ├── configs/data.yaml        # dataset download/split configuration
 ├── docs/
-│   ├── api.md               # REST API endpoints and lifecycle
-│   └── ui.md                # UI behavior and local frontend development
+│   └── app/
+│       ├── api.md           # REST API endpoints and lifecycle
+│       └── ui.md            # UI behavior and local frontend development
 ├── src/logsentinel/         # the application package
 │   ├── data/                 # dataset download, HDFS/BGL loaders, session building, splits
 │   ├── parsing/               # log line normalization and Drain-based template parsing
