@@ -28,20 +28,10 @@ ui/dist/
 /results/
 /docs/stream-runs/
 
-# Research-only artifacts: not needed to set up or run the application.
-# Kept on disk for the thesis; excluded from the public GitHub repo.
-/paper/
-/PLAN.md
-/docs/notes/
-/docs/results/
-/docs/citations.md
-/docs/ablations/
-/docs/drift/
-/docs/perf/
-/docs/comparative-study/
-/docs/comparative-study.zip
-/scripts/run_pyod_benchmark.py
-/scripts/run_loglizer_benchmark.py
+# Research-only artifacts live entirely outside this repo now, in
+# ../logsentinel-research/ (paper/, PLAN.md, docs/{notes,results,citations.md,
+# ablations,drift,perf,comparative-study}/, scripts/run_{pyod,loglizer}_benchmark.py)
+# — nothing left here for those paths to accidentally un-ignore.
 /ui/e2e/shots/
 
 # Ad-hoc local verification scripts/screenshots (not part of app setup or usage)
