@@ -1,6 +1,6 @@
 PY = .venv/bin/python
 
-.PHONY: data test lint ui ui-test perf perf-report staging production live-feed clean promote retrain-feedback
+.PHONY: data test lint ui ui-test perf perf-report staging production live-feed clean promote retrain-feedback playground
 data:            ## download + build session splits (HDFS_v1, BGL)
 	$(PY) -m logsentinel.data.download
 	$(PY) -m logsentinel.data.build
@@ -28,6 +28,8 @@ production:          ## operator UI at :8001/ -- isolated Kafka+DB, never trains
 	$(PY) main.py --port 8001 --app-mode operator
 live-feed:           ## standalone external log generator -- simulates a real system producing logs
 	$(PY) -m logsentinel.stream.live_feed
+playground:          ## PERSONAL TEST ONLY: traffic + random anomaly bursts, to exercise detect/triage/retrain
+	$(PY) -m logsentinel.stream.playground
 promote:             ## promote a trained bundle to production's own DB: make promote BUNDLE=models/<name>
 	$(PY) -m logsentinel.promote $(BUNDLE)
 retrain-feedback:    ## retrain folding in confirmed false positives; registers to staging, never activates/promotes

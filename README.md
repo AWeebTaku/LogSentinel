@@ -493,6 +493,14 @@ It runs forever (real HDFS log lines, reshuffled each lap, no fixed end) until y
 exactly like a real external process would. When a real log shipper exists, it publishes to the
 same topic and nothing else changes.
 
+> **`make playground` is a personal test tool, not anything production-related.** There is no real
+> log-generating system behind this project (nothing like `live_feed.py` exists for real traffic
+> yet), so this exists purely to let you exercise the full loop by hand: it sends ordinary traffic
+> like `live_feed.py`, but also fires random anomaly bursts on a timer (the same mechanism as
+> admin's "Inject anomaly burst" button), so you can watch an alert appear, triage it yourself
+> (resolved or false positive), and check whether `make retrain-feedback` picks it up. Run it
+> against **staging only** — `python -m logsentinel.stream.playground --help` for the timing knobs.
+
 Putting it together, four terminals:
 
 ```bash
