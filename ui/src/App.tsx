@@ -13,13 +13,14 @@ import Models from "./pages/Models";
 import Source from "./pages/Source";
 import { useTheme } from "./theme";
 
-// operator: live monitoring + alert triage, the day-to-day working environment for whoever is
-// watching the system run (no way to start/stop/train/inject anything -- the API refuses those
-// routes too when run with LOGSENTINEL_APP_MODE=operator, this is not just a hidden nav).
+// operator: live monitoring, alert triage, and starting/stopping its own live ingestion (that's
+// an operator action, not a testing one) -- no training, no testing, no anomaly injection. The
+// API refuses those routes too when run with LOGSENTINEL_APP_MODE=operator, this is not just a
+// hidden nav.
 // admin: the full testing/training suite on top, for whoever is standing the system up or
 // evaluating models -- a separate build (admin.html) kept out of the operator deployment.
 const VARIANTS = {
-  operator: ["/", "/alerts"],
+  operator: ["/", "/alerts", "/source"],
   admin: ["/", "/alerts", "/source", "/models", "/experiments"],
 } as const;
 
@@ -28,7 +29,7 @@ export type AppVariant = keyof typeof VARIANTS;
 const pages = (variant: AppVariant) => ({
   "/": { label: "Dashboard", element: <Dashboard variant={variant} /> },
   "/alerts": { label: "Alerts", element: <Alerts /> },
-  "/source": { label: "Source", element: <Source /> },
+  "/source": { label: "Source", element: <Source variant={variant} /> },
   "/models": { label: "Models", element: <Models /> },
   "/experiments": { label: "Experiments", element: <Experiments /> },
 });

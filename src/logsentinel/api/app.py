@@ -25,9 +25,14 @@ from . import jobs
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
 
 # "full" (default: local dev, main.py) serves everything. "operator" is the production-facing
-# deployment: live monitoring + alert triage only, nothing that starts/stops/trains/injects
-# anything. Gated server-side (not just hidden in the UI) so a stray curl or a tampered frontend
-# can't reach training/testing controls from an operator-mode process.
+# deployment: live monitoring, alert triage, and starting/stopping its own live ingestion --
+# nothing that trains or tests anything. Gated server-side (not just hidden in the UI) so a stray
+# curl or a tampered frontend can't reach training/testing controls from an operator-mode process.
+#
+# Starting/stopping a source is an operator action here, not a testing one -- it's how the live
+# ingestion that operator mode exists to watch actually gets started. Injecting a synthetic
+# anomaly burst and the "spike" traffic scenario stay admin-only: those are testing simulations,
+# never something you'd want available against whatever is actually running in production.
 APP_MODE = os.environ.get("LOGSENTINEL_APP_MODE", "full")
 
 
@@ -35,6 +40,8 @@ def _operator_allowed(method: str, path: str) -> bool:
     if path in ("/", "/index.html", "/health", "/docs", "/openapi.json", "/redoc") or path.startswith("/assets/"):
         return True
     if method == "GET" and (path == "/sources/current" or path == "/metrics"):
+        return True
+    if method == "POST" and (path == "/sources/start" or (path.startswith("/sources/") and path.endswith("/stop"))):
         return True
     if path.startswith("/alerts"):
         return method in ("GET", "PATCH")
