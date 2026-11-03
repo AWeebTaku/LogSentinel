@@ -23,7 +23,9 @@ quality are things the app actually produces, not numbers asserted in a slide de
   [docs/app/api.md](docs/app/api.md) and [docs/app/ui.md](docs/app/ui.md).
 - **SQLite storage** for alerts, the model registry, and run metadata — no external database to
   stand up.
-- **One-command launcher** (`main.py`) that builds the UI, brings up Kafka, and starts the API.
+- **One-command launcher** (`main.py`) that builds the UI, brings up Kafka, and starts the API —
+  with separate `make staging`/`make production` targets for genuinely isolated admin/operator
+  instances (own Kafka, own database), and `make live-feed` to simulate a real system producing logs.
 
 ## Architecture
 
@@ -48,7 +50,7 @@ logsentinel/
 ├── main.py                  # one-command launcher: builds the UI, starts Kafka, starts the API
 ├── pyproject.toml           # package metadata + dependency list (pip install -e .)
 ├── requirements.txt         # plain pip-installable dependency list (mirrors pyproject.toml)
-├── Makefile                 # make data / make test / make lint / make ui shortcuts
+├── Makefile                 # make data/test/lint/ui, and staging/production/live-feed/promote/clean
 ├── docker-compose.yml       # Kafka via Docker, for platforms without scripts/kafka.sh
 ├── scripts/kafka.sh         # native (no-Docker) Kafka bootstrap for Linux x86-64
 ├── configs/data.yaml        # dataset download/split configuration
@@ -245,30 +247,15 @@ python -m pip install -e '.[dev]'
 
 ---
 
-## 4. Set up Kafka and run the app
+## 4. Set up Kafka
+
+This step only gets Kafka itself ready. How to actually start and use the app (which launches
+Kafka for you on Linux) is step 6, once you have a trained model to run it against.
 
 ### Linux x86-64 (native, recommended, no Docker)
 
-Nothing to install manually — the launcher bootstraps a checksum-verified Java 17 + Kafka 3.9.1
-under `~/.local/share/logsentinel` on first run.
-
-```bash
-python main.py
-```
-
-Open <http://127.0.0.1:8000> once it prints "LogSentinel is ready". The API's interactive docs are
-at <http://127.0.0.1:8000/docs>.
-
-To skip Kafka/streaming (UI + API only, e.g. to look around without a dataset):
-
-```bash
-python main.py --no-streaming
-```
-
-Other launcher flags: `--port 8080` (default 8000), `--no-build` (reuse an existing `ui/dist`
-instead of rebuilding it).
-
-You can also drive Kafka directly instead of through `main.py`:
+Nothing to install manually — `python main.py` (step 6) bootstraps a checksum-verified Java 17 +
+Kafka 3.9.1 under `~/.local/share/logsentinel` on first run. If you'd rather drive Kafka directly:
 
 ```bash
 scripts/kafka.sh setup     # one-time: download + verify JDK 17 and Kafka
@@ -281,17 +268,17 @@ scripts/kafka.sh reset     # wipe local broker storage (see Troubleshooting belo
 ### macOS
 
 The native Kafka bootstrap script downloads Linux x86-64 binaries, so it doesn't run on macOS.
-Use Docker Compose for Kafka and run the app itself natively:
+Use Docker Compose instead; the app itself still runs natively:
 
 ```bash
 # Install Docker Desktop first: https://www.docker.com/products/docker-desktop/
 docker compose up -d               # starts Kafka on 127.0.0.1:9092
-python main.py --no-streaming      # start the UI/API (the launcher's own Kafka bootstrap is Linux-only)
 ```
 
-Once Kafka is confirmed up (`docker compose ps`), the Source/Dashboard streaming features work
-against it normally — the app only needs something listening on `127.0.0.1:9092`, it doesn't care
-whether that's the native bootstrap or a container.
+Once it's up (`docker compose ps`), the app's Source/Dashboard streaming features work against it
+normally in step 6 — it only needs something listening on `127.0.0.1:9092`, it doesn't care
+whether that's the native bootstrap or a container. (`main.py`'s own Kafka bootstrap is Linux-only,
+so pass `--no-streaming` to any `python main.py` command in step 6 — Kafka's already up via Docker.)
 
 Stop it with `docker compose down` when done.
 
@@ -310,15 +297,16 @@ wsl --install                      # installs WSL2 + Ubuntu; reboot if prompted
 
 Then open the Ubuntu shell and follow the **Ubuntu/Debian** instructions from steps 1–4 above
 exactly as if it were native Linux — WSL2 Ubuntu is x86-64 Linux as far as this project is
-concerned, so `python main.py` works with the same automatic Kafka bootstrap.
+concerned, so `python main.py` (step 6) works with the same automatic Kafka bootstrap.
 
 **Option B — native Windows + Docker Desktop:**
 
 ```powershell
 # Install Docker Desktop first: https://www.docker.com/products/docker-desktop/
 docker compose up -d
-python main.py --no-streaming
 ```
+
+Same as macOS: pass `--no-streaming` to any `python main.py` command in step 6.
 
 ---
 
@@ -377,68 +365,25 @@ python -m logsentinel.models.train --dataset hdfs --parser drain --model pca \
   --early-age 30 --early-model ae --out models/hdfs-drain-pca-early
 ```
 
-Build the anomaly pool used by the UI's "Inject anomaly burst" button:
+Build the anomaly pool used by admin's "Inject anomaly burst" button:
 
 ```bash
 python -m logsentinel.stream.pools
 ```
 
-Finally, open the **Models** page in the UI, register the bundle folder (e.g.
-`models/hdfs-drain-pca-early`), and click **Activate** — the Source page and streaming engine use
-whichever model is active.
-
----
-
-## 6. Testing
+Finally, register and activate the bundle so the streaming engine actually uses it — no need for
+the app to be running yet:
 
 ```bash
-python -m pip install -e '.[dev]'     # once, installs pytest/ruff/httpx2
-
-make test                              # Python unit tests
-make lint                              # ruff
-cd ui && npm test && npm run typecheck # UI unit tests + type-checking
-
-pytest -m e2e                          # needs a running Kafka broker (scripts/kafka.sh start / docker compose up)
+python -m logsentinel.promote models/hdfs-drain-pca-early --to data/logsentinel.db
 ```
 
----
-
-## Troubleshooting
-
-- **`python3.12: command not found` but pyenv/asdf shows it installed** — the version manager
-  hasn't put it on `PATH` as a runnable command yet. Run `pyenv global 3.12.14` (or `pyenv local
-  3.12.14` inside the repo), or call the interpreter by its full path, e.g.
-  `~/.pyenv/versions/3.12.14/bin/python3.12 -m venv .venv`.
-- **Dashboard shows `n/a` for throughput/lag and 0 alerts even though a source is "running"** —
-  usually a stale Kafka broker: if the local broker has been running across many restarts/sessions,
-  its topic metadata can get out of sync (you may see a log line like
-  `Topic alerts-critical ... partition count changed from 3 to 0`). Fix: stop everything, then wipe
-  the local broker storage and let it recreate topics fresh:
-  ```bash
-  scripts/kafka.sh stop
-  rm -rf ~/.local/share/logsentinel/kafka-data ~/.local/share/logsentinel/kafka-logs
-  python main.py
-  ```
-- **Port 8000 already in use** — pass a different port: `python main.py --port 8080`, or find and
-  stop whatever is using 8000 (`lsof -i :8000` / `ss -ltnp | grep 8000` on Linux).
-- **`make data` fails partway through a download** — the download is resumable and MD5-checked;
-  just re-run `make data` (or `python -m logsentinel.data.download`). It skips files that already
-  match the expected checksum and only re-fetches the incomplete one.
-- **Thunderbird download interrupted** — it's streamed rather than MD5-checked (the full archive is
-  never read), and only renames its output into place once the requested line count is fully read.
-  An interrupted run leaves no corrupt `Thunderbird.log`, just an incomplete `.part` file — re-run
-  `python -m logsentinel.data.download --only thunderbird` from scratch.
-- **`pip install confluent-kafka` fails to build** — this usually means no prebuilt wheel exists
-  for your exact platform/Python combination and it's falling back to a source build that needs
-  `librdkafka`. Install it via your package manager first (`sudo apt install librdkafka-dev` /
-  `sudo dnf install librdkafka-devel` / `brew install librdkafka`) and re-run pip install. This is
-  one more reason native Windows is not the recommended path — use WSL2 instead.
-- **UI build fails with a Vite/Node error** — check `node --version`; Vite 8 needs Node 20.19+
-  (22 or 24 LTS recommended). Update via nvm (`nvm install 22 && nvm use 22`).
+(Or, once the app is running — step 6 — do the same thing from the admin UI's Models page:
+register the bundle folder, then click **Activate**.)
 
 ---
 
-## Operator vs. admin
+## 6. Run the app — operator vs. admin
 
 Two roles, two separate single-page apps, one Makefile command each:
 
@@ -452,6 +397,11 @@ Two roles, two separate single-page apps, one Makefile command each:
   starts/stops its own engine — no training, no testing, no injection, no model picker (it always
   runs whatever was promoted to it). Those stay admin-only, refused server-side even by a direct
   API call, not just hidden in the nav.
+
+Just want to see it work? `make staging`, open `http://localhost:8000/admin.html`, go to Source
+and click **Start source** — that alone replays real HDFS logs through the whole pipeline and
+raises real alerts, no second instance or external generator needed. The rest of this section is
+for running it the way an actual deployment would: operator and admin genuinely separated.
 
 `make staging` and `make production` are genuinely separate instances — each gets its own Kafka
 broker, database, and model directory (`LOGSENTINEL_KAFKA_PORT`, `LOGSENTINEL_TOOLS`,
@@ -481,13 +431,13 @@ It runs forever (real HDFS log lines, reshuffled each lap, no fixed end) until y
 exactly like a real external process would. When a real log shipper exists, it publishes to the
 same topic and nothing else changes.
 
-### Running it all
+Putting it together, four terminals:
 
 ```bash
-make staging        # admin UI, terminal 1
-make production      # operator UI, terminal 2 (own Kafka + DB)
-LOGSENTINEL_KAFKA_PORT=9192 make live-feed      # external log generator, terminal 3, feeding production
-make promote BUNDLE=models/<bundle-name>        # once you've trained/picked a model in staging
+make staging                                    # admin UI, terminal 1
+make production                                 # operator UI, terminal 2 (own Kafka + DB)
+LOGSENTINEL_KAFKA_PORT=9192 make live-feed       # external log generator, terminal 3, feeding production
+make promote BUNDLE=models/<bundle-name>         # terminal 4, once you've trained/picked a model in staging
 ```
 
 `make production`'s `--app-mode operator` makes the backend itself refuse every train/inject/
@@ -500,6 +450,63 @@ Run `make clean` (or `python -m logsentinel.cleanup`, same thing) any time for a
 old run history, trained model bundles, and generated data — it shows exactly what's there, with
 sizes and ages, and deletes nothing until you add `--yes`. See `python -m logsentinel.cleanup
 --help`.
+
+The API's interactive docs are at `<host>/docs` on whichever instance (e.g.
+<http://127.0.0.1:8000/docs>). Other `main.py` flags (used directly, or see the Makefile for how
+`staging`/`production` set them): `--port 8080` (default 8000), `--no-build` (reuse an existing
+`ui/dist` instead of rebuilding it), `--no-streaming` (skip Kafka, UI + API only).
+
+---
+
+## 7. Testing
+
+```bash
+python -m pip install -e '.[dev]'     # once, installs pytest/ruff/httpx2
+
+make test                              # Python unit tests
+make lint                              # ruff
+cd ui && npm test && npm run typecheck # UI unit tests + type-checking
+
+pytest -m e2e                          # needs a running Kafka broker (scripts/kafka.sh start / docker compose up)
+```
+
+---
+
+## Troubleshooting
+
+- **`python3.12: command not found` but pyenv/asdf shows it installed** — the version manager
+  hasn't put it on `PATH` as a runnable command yet. Run `pyenv global 3.12.14` (or `pyenv local
+  3.12.14` inside the repo), or call the interpreter by its full path, e.g.
+  `~/.pyenv/versions/3.12.14/bin/python3.12 -m venv .venv`.
+- **Dashboard shows `n/a` for throughput/lag and 0 alerts even though a source is "running"** —
+  usually a stale Kafka broker: if the local broker has been running across many restarts/sessions,
+  its topic metadata can get out of sync (you may see a log line like
+  `Topic alerts-critical ... partition count changed from 3 to 0`). Fix: stop everything, then wipe
+  the local broker storage and let it recreate topics fresh:
+  ```bash
+  scripts/kafka.sh stop
+  rm -rf ~/.local/share/logsentinel/kafka-data ~/.local/share/logsentinel/kafka-logs
+  make staging      # or: python main.py
+  ```
+- **Port 8000 (or 8001) already in use** — `make staging`/`make production` use fixed ports; call
+  `python main.py --port 8080 --app-mode full` directly for a different one, or find and stop
+  whatever's using the port (`lsof -i :8000` / `ss -ltnp | grep 8000` on Linux).
+- **`make data` fails partway through a download** — the download is resumable and MD5-checked;
+  just re-run `make data` (or `python -m logsentinel.data.download`). It skips files that already
+  match the expected checksum and only re-fetches the incomplete one.
+- **Thunderbird download interrupted** — it's streamed rather than MD5-checked (the full archive is
+  never read), and only renames its output into place once the requested line count is fully read.
+  An interrupted run leaves no corrupt `Thunderbird.log`, just an incomplete `.part` file — re-run
+  `python -m logsentinel.data.download --only thunderbird` from scratch.
+- **`pip install confluent-kafka` fails to build** — this usually means no prebuilt wheel exists
+  for your exact platform/Python combination and it's falling back to a source build that needs
+  `librdkafka`. Install it via your package manager first (`sudo apt install librdkafka-dev` /
+  `sudo dnf install librdkafka-devel` / `brew install librdkafka`) and re-run pip install. This is
+  one more reason native Windows is not the recommended path — use WSL2 instead.
+- **UI build fails with a Vite/Node error** — check `node --version`; Vite 8 needs Node 20.19+
+  (22 or 24 LTS recommended). Update via nvm (`nvm install 22 && nvm use 22`).
+
+---
 
 ## Deployment note
 
