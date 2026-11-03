@@ -440,79 +440,66 @@ pytest -m e2e                          # needs a running Kafka broker (scripts/k
 
 ## Operator vs. admin
 
-`python main.py` (just that, nothing extra) already serves two separate single-page apps from the
-one instance you just started:
+Two roles, two separate single-page apps, one Makefile command each:
 
-- **`http://localhost:8000/` — operator.** Dashboard, Alerts, and a trimmed-down Source page for
-  starting/stopping its own live ingestion — nothing that trains or tests. Starting/stopping
-  ingestion is an operator action, not a testing one: it's how the thing operator mode exists to
-  watch actually gets started. There's no "inject a scenario" here and no model picker (it always
-  runs whichever model was promoted to it) — those stay admin-only, refused server-side even by a
-  direct API call. This is the role of whoever's job is to *watch* the system — in a real org,
-  think a SOC/NOC analyst or whoever's on alert-triage duty, not necessarily the same person who
-  set the system up.
-- **`http://localhost:8000/admin.html` — admin.** The full testing/training suite (Source replay
-  with scenario/injection controls, Models, Experiments), plus Dashboard and Alerts for context.
-  This is the role of whoever *builds and maintains* the system — trains and validates models,
-  runs test replays, reviews benchmark experiments.
+- **Admin** — whoever *builds and maintains* the system: trains and validates models, runs test
+  replays, reviews benchmark experiments. `make staging` → `http://localhost:8000/admin.html`.
+  Full suite: Source replay (with scenario/injection controls), Models, Experiments, plus
+  Dashboard and Alerts for context.
+- **Operator** — whoever's job is just to *watch* the system run (a SOC/NOC analyst, whoever's on
+  alert-triage duty, not necessarily the same person who set it up). `make production` →
+  `http://localhost:8001/`. Dashboard, Alerts, and a trimmed Source page that only ever
+  starts/stops its own engine — no training, no testing, no injection, no model picker (it always
+  runs whatever was promoted to it). Those stay admin-only, refused server-side even by a direct
+  API call, not just hidden in the nav.
 
-There is currently no real log shipper wired up (that part of a real deployment doesn't exist
-yet), so the operator's Source page still replays the same bundled test dataset the admin side
-uses. On one shared instance this is still the same single pipeline underneath — only one run at a
-time, whoever starts it — so the real separation described below is what actually keeps admin's
-testing traffic and the operator's own run from interfering with each other. When a real log
-source exists, it plugs into the same `logs-raw` Kafka topic and the operator's Start/Stop
-controls work unchanged.
+`make staging` and `make production` are genuinely separate instances — each gets its own Kafka
+broker, database, and model directory (`LOGSENTINEL_KAFKA_PORT`, `LOGSENTINEL_TOOLS`,
+`LOGSENTINEL_DB` under the hood, see the Makefile) — so nothing one does can affect the other, and
+a model trained in staging does **not** automatically reach production. Two things cross the gap
+deliberately:
 
-On one instance like this, both windows share the same backend/database, so a model the admin
-activates shows up for the operator instantly — there's nothing to pass between them, it's the
-same state. That's fine for trying both UIs out, but it also means an admin running a test replay
-is replaying it against the exact same live data the operator is watching.
+**Promoting a model**, once you're satisfied with its metrics on the admin Models page:
+```bash
+make promote BUNDLE=models/<bundle-name>
+```
+Registers it in production's own database and activates it — no need for production's API to be
+reachable or switched out of operator mode. Both instances already share the same `models/` folder
+on one machine, so there's nothing to copy; across separate machines, copy/rsync the bundle
+directory first.
 
-### Real isolation: separate staging and production instances
+**Log traffic.** There's no real log shipper wired up yet, so operator's "Start source" never
+produces anything itself (unlike admin's bounded test replay) — it only starts the detection
+engine, watching whatever is already arriving on Kafka's `logs-raw` topic. To actually see it do
+something, run an external generator that stands in for a real system producing logs, pointed at
+the *same* Kafka broker as whichever instance you want fed:
+```bash
+LOGSENTINEL_KAFKA_PORT=9192 make live-feed     # feeds production (port 9192, per `make production`)
+make live-feed                                 # feeds staging (default port 9092)
+```
+It runs forever (real HDFS log lines, reshuffled each lap, no fixed end) until you stop it —
+exactly like a real external process would. When a real log shipper exists, it publishes to the
+same topic and nothing else changes.
 
-If training/testing should never be able to touch what's actually watching real logs — the
-recommended setup for actual use — run two **fully independent** instances instead. Each gets its
-own Kafka broker and database, so nothing in one can affect the other at all:
+### Running it all
 
 ```bash
-# staging: full admin UI, for training/testing new models, on your own machine
-python main.py --port 8000 --app-mode full
-
-# production: operator UI only, a separate Kafka + DB, on another machine (ideally)
-# or another terminal on the same one for now
-LOGSENTINEL_KAFKA_PORT=9192 \
-LOGSENTINEL_TOOLS=$HOME/.local/share/logsentinel-prod \
-LOGSENTINEL_DB=data/prod.db \
-python main.py --port 8001 --app-mode operator
+make staging        # admin UI, terminal 1
+make production      # operator UI, terminal 2 (own Kafka + DB)
+LOGSENTINEL_KAFKA_PORT=9192 make live-feed      # external log generator, terminal 3, feeding production
+make promote BUNDLE=models/<bundle-name>        # once you've trained/picked a model in staging
 ```
 
-`LOGSENTINEL_KAFKA_PORT` (default 9092) and `LOGSENTINEL_TOOLS` (default
-`~/.local/share/logsentinel`, also the Kafka/JDK install location) keep the two Kafka brokers from
-colliding; `LOGSENTINEL_DB` (default `data/logsentinel.db`) keeps the alert/model/run history
-separate. On two different machines none of this matters — just run one instance per machine with
-the right `--app-mode`. `--app-mode operator` also makes the *backend itself* refuse every
-train/inject/experiment route (404, not just hidden in the UI) — starting/stopping its own
-ingestion stays available (that's an operator action), but nothing that tests or trains is ever
-reachable, even by a direct API call.
+`make production`'s `--app-mode operator` makes the backend itself refuse every train/inject/
+experiment route (404) — starting/stopping its own engine stays available (that's an operator
+action), but nothing that tests or trains is ever reachable, even by a direct API call. On two
+separate machines, just run one instance per machine with the right `--app-mode`; none of the port/
+env-var juggling matters since each machine only ever runs one instance.
 
-With this setup, a model trained and validated in staging does **not** automatically reach
-production — that's the point. Once you're satisfied with it (check its metrics on the Models
-page), promote it deliberately:
-
-```bash
-python -m logsentinel.promote models/<bundle-name> --to data/prod.db
-```
-
-This registers the bundle in production's own database and makes it the active model — no need
-for production's API to be reachable or temporarily switched out of operator mode. On one machine,
-both instances already share the same `models/` folder on disk, so there's nothing to copy; on
-separate machines, copy/rsync the bundle directory over first. See `python -m logsentinel.promote
+Run `make clean` (or `python -m logsentinel.cleanup`, same thing) any time for a dry-run report of
+old run history, trained model bundles, and generated data — it shows exactly what's there, with
+sizes and ages, and deletes nothing until you add `--yes`. See `python -m logsentinel.cleanup
 --help`.
-
-Run `python -m logsentinel.cleanup` (no flags) any time for a dry-run report of old run history,
-trained model bundles, and generated data — it shows exactly what's there, with sizes and ages,
-and deletes nothing until you add `--yes`. See `python -m logsentinel.cleanup --help`.
 
 ## Deployment note
 
