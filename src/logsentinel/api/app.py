@@ -309,11 +309,14 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
 
     @app.post("/sources/{run_id}/inject", status_code=202)
     def inject(run_id: str, body: InjectRequest, con=Depends(get_con)):
+        """Works for a "watch" run too (engine-only, consuming an externally-fed logs-raw, e.g.
+        playground.py/live_feed.py) -- it only needs a running engine's watermark, not a bounded
+        replay. Still admin-only: "watch" runs don't exist for operator mode (see _operator_allowed)."""
         from ..stream import inject as inj
         from ..stream import pools
         run = db.get_run(con, run_id)
         run = jobs.refresh(con, run) if run else None
-        if run is None or run["kind"] != "source":
+        if run is None or run["kind"] not in ("source", "watch"):
             raise HTTPException(404, "source not found")
         if run["status"] != "running" or jobs.progress(run).get("phase") != "running":
             raise HTTPException(409, "the source is not streaming right now")

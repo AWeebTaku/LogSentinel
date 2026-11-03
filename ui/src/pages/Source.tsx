@@ -11,6 +11,7 @@ import { usePoll } from "../hooks";
 const hi = (r: Run) => (r.summary ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export default function Source({ variant = "admin" }: { variant?: "operator" | "admin" }) {
+  const [mode, setMode] = useState<"replay" | "watch">("replay");   // admin only; operator is always "watch"
   const [rate, setRate] = useState(2000);
   const [sessions, setSessions] = useState(10000);
   const [workers, setWorkers] = useState(1);
@@ -22,6 +23,7 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
   const [busy, setBusy] = useState(false);
 
   const isOp = variant === "operator";
+  const watching = isOp || mode === "watch";    // "watch" an external feed instead of replaying bundled test data
   // /models, /sources/{id}/injections and /runs are all admin-only routes (refused server-side in
   // operator mode), so operator must never poll them -- it has no injection panel or model picker
   // to feed anyway.
@@ -57,24 +59,42 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
       {!isOp && !active && !models.loading && (
         <Info title="No active model">Register and activate a model under Models before starting a source.</Info>
       )}
-      {isOp && (
+      {watching && (
         <Info title="External log source">
           This never produces log traffic itself -- it only starts the detection engine watching
-          whatever arrives on Kafka's logs-raw topic. Run a log source separately: for now, before a
-          real log shipper exists, that's <code>python -m logsentinel.stream.live_feed</code> (or{" "}
-          <code>make live-feed</code>), which stands in for a real system continuously generating
-          logs. When a real shipper exists, it publishes to the same topic and nothing here changes.
+          whatever arrives on Kafka's logs-raw topic. Run a log source separately: before a real log
+          shipper exists, that's <code>make live-feed</code> (plain traffic) or{" "}
+          <code>make playground</code> (traffic plus random anomaly bursts, for testing retrain
+          feedback -- <strong>personal test tool, not production</strong>). Once one is running and
+          pointed at this instance's own Kafka, Start watching below, then use Inject or wait for{" "}
+          <code>playground</code>'s own bursts.
         </Info>
       )}
 
       <div className="grid-2">
         <div className="panel">
-          <h2>{isOp ? "Start watching" : "Start a run"}</h2>
-          {isOp ? (
+          <h2>{watching ? "Start watching" : "Start a run"}</h2>
+          {!isOp && (
+            <div className="row" style={{ marginBottom: "1rem" }}>
+              <Select id="s-mode" labelText="Source" value={mode} disabled={running} onChange={(e) => setMode(e.target.value as "replay" | "watch")}>
+                <SelectItem value="replay" text="Replay bundled test dataset" />
+                <SelectItem value="watch" text="Watch an external feed (live-feed / playground)" />
+              </Select>
+            </div>
+          )}
+          {watching ? (
             <div className="row">
               <Select id="s-workers-op" labelText="Engine workers" value={String(workers)} disabled={running} onChange={(e) => setWorkers(Number(e.target.value))}>
                 {[1, 2, 4].map((n) => <SelectItem key={n} value={String(n)} text={String(n)} />)}
               </Select>
+              {!isOp && (
+                <Select id="s-model-watch" labelText="Model" value={bundle} disabled={running} onChange={(e) => setBundle(e.target.value)}>
+                  <SelectItem value="active:hdfs" text={active ? `Active: ${active.name} v${active.version}` : "Active model"} />
+                  {(models.data?.items ?? []).map((m) => (
+                    <SelectItem key={m.id} value={`models/${m.path.split("/").pop()}`} text={`${m.name} v${m.version}`} />
+                  ))}
+                </Select>
+              )}
             </div>
           ) : (
             <>
@@ -105,10 +125,10 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
           <div className="actions">
             <Button renderIcon={Play} disabled={running || busy}
               onClick={() => act(
-                () => (isOp ? api.watchSource({ workers }) : api.startSource({ rate, sessions, workers, scenario, bundle })),
-                isOp ? "Watching for live traffic." : "Source started.",
+                () => (watching ? api.watchSource({ workers, bundle }) : api.startSource({ rate, sessions, workers, scenario, bundle })),
+                watching ? "Watching for live traffic." : "Source started.",
               )}>
-              {isOp ? "Start watching" : "Start source"}
+              {watching ? "Start watching" : "Start source"}
             </Button>
             <Button kind="danger--tertiary" renderIcon={Stop} disabled={!running || busy} onClick={() => run && act(() => api.stopSource(run.id), "Stop requested. The engine drains and flushes first.")}>Stop</Button>
           </div>
@@ -118,7 +138,7 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
           <h2>Current run</h2>
           {cur.loading ? <SkeletonText paragraph lineCount={4} /> : !run ? (
             <p className="muted">No run yet. Start one on the left.</p>
-          ) : isOp ? (
+          ) : run.kind === "watch" ? (
             <>
               <DefList items={[
                 ["Run", <span className="num">{run.id}</span>], ["Status", <RunStatusTag status={run.status} />],

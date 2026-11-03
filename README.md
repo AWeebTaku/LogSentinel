@@ -501,6 +501,42 @@ same topic and nothing else changes.
 > (resolved or false positive), and check whether `make retrain-feedback` picks it up. Run it
 > against **staging only** — `python -m logsentinel.stream.playground --help` for the timing knobs.
 
+### Setting up a real log source
+
+`live_feed.py` and `playground.py` are both simulations — replaying the bundled HDFS benchmark
+dataset, not anything production actually generates. Pointing production at a *real* system's logs
+is more than swapping the producer; some of it is a thin, generic layer, some of it is genuinely
+HDFS-specific and would need new code:
+
+**Already generic, reusable as-is:**
+- The transport: Kafka, topic `logs-raw`, one message per log line.
+- The wire envelope (`src/logsentinel/stream/wire.py`): `{"i": seq, "t": send_time_ns, "l": raw_line}`,
+  JSON-encoded, produced with the session key as the Kafka message key. Any real shipper that
+  publishes in this shape works with the engine unchanged — no code on the ingestion side.
+
+**Hardcoded to HDFS today, would need a new implementation per real log format:**
+- **Session keying** — `hdfs_key()` in `wire.py` extracts a `blk_<id>` via regex; that's what groups
+  log lines into a "session" at all. A different system needs its own grouping concept (a request
+  ID, connection ID, trace ID, host+PID — whatever the real log format actually carries) and a
+  matching key-extraction function, used by whatever replaces `producer.py`'s `hdfs_key(line)` call.
+- **Event-time extraction** — `engine.py` calls `hdfs_log_time()` directly to track its watermark
+  (the `"YYMMDD HHMMSS"` HDFS line prefix). A different log format needs its own timestamp parser
+  here, or the watermark/deadline-check logic in `engine.py` stops working correctly.
+- **Line parsing and masking** (`parsing/content.py`, `parsing/parsers.py`) — already has some
+  multi-format precedent (HDFS/BGL/Thunderbird header-stripping for the *offline* research
+  pipeline), so this is the most reusable of the three, but the per-dataset header-token count and
+  the Drain/regex masking would still need tuning against real sample lines.
+
+**Not reusable at all — has to be redone from real data:**
+- **The model itself.** A bundle trained on HDFS's own log vocabulary and Drain templates has no
+  meaningful signal on an unrelated system's log content; `python -m logsentinel.models.train`
+  would need to run against real captured samples of the new system's logs (a new `--dataset`
+  arm, a parser, a train/val/test split — the same shape of work as `data/hdfs.py`/`data/bgl.py`
+  did for the benchmark datasets, just pointed at your own logs instead).
+
+None of this is started — it's scoped here so it's clear what "plug in a real log source" actually
+requires before committing to it, not because it's planned work.
+
 Putting it together, four terminals:
 
 ```bash
@@ -515,6 +551,18 @@ experiment route (404) — starting/stopping its own engine stays available (tha
 action), but nothing that tests or trains is ever reachable, even by a direct API call. On two
 separate machines, just run one instance per machine with the right `--app-mode`; none of the port/
 env-var juggling matters since each machine only ever runs one instance.
+
+**Testing the detect → triage → retrain loop** (see "Retraining" below) is a staging-only exercise
+— it doesn't need production or `live-feed` at all, just two terminals:
+
+```bash
+make staging        # admin UI, terminal 1
+make playground      # terminal 2 -- feeds staging's own Kafka (default port 9092) with
+                      # ordinary traffic plus random anomaly bursts, so alerts actually appear
+                      # for you to triage without waiting or clicking "Inject" by hand
+```
+Watch an alert land on the Dashboard, mark it resolved or false positive on the Alerts page, then
+run `make retrain-feedback` and check the Models page for the new (unactivated) bundle.
 
 ### Retraining
 
