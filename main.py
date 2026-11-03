@@ -144,8 +144,7 @@ def main() -> int:
             print(f"LogSentinel (operator mode) is ready at {url} -- dashboard + alerts only, "
                   "training/testing routes are refused. Press Ctrl+C to stop.", flush=True)
         else:
-            print(f"LogSentinel is ready at {url} (admin: source/models/experiments, dashboard, alerts). "
-                  f"API docs: {url}/docs. Press Ctrl+C to stop.", flush=True)
+            print(f"LogSentinel is ready at {url}. Press Ctrl+C to stop.", flush=True)
 
         while api.poll() is None:
             if sink is not None and sink.poll() is not None:
