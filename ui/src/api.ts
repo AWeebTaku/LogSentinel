@@ -1,6 +1,11 @@
 // Typed client for the LogSentinel REST API (see docs/api.md).
+// In a real build (served by `python -m logsentinel.api`/main.py, any --port), the API is always
+// same-origin, so BASE stays "" regardless of which port that happens to be -- two instances on
+// different ports (e.g. the staging/production split in README.md) must each talk to their own
+// API, never a hardcoded one. Only `npm run dev` (Vite's own dev server, a different origin) needs
+// an explicit target.
 export const BASE: string =
-  (import.meta.env.VITE_API as string | undefined) ?? (location.port === "8000" ? "" : "http://127.0.0.1:8000");
+  (import.meta.env.VITE_API as string | undefined) ?? (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
