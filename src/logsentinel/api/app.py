@@ -51,6 +51,17 @@ def _operator_allowed(method: str, path: str) -> bool:
     return False
 
 
+# "playground" is its own narrow deployment: a standalone portal for stream/playground.py (the
+# personal test traffic+anomaly generator) and nothing else -- not even alerts or models. It
+# shares staging's own database and Kafka broker (no LOGSENTINEL_DB/LOGSENTINEL_KAFKA_PORT
+# override, see `make playground`), so its run-tracking correctly participates in the same
+# mutual-exclusion check as a "source"/"watch" run on that same broker (jobs.running_job).
+def _playground_allowed(method: str, path: str) -> bool:
+    if path in ("/", "/index.html", "/health", "/docs", "/openapi.json", "/redoc") or path.startswith("/assets/"):
+        return True
+    return path.startswith("/playground")
+
+
 class AlertPatch(BaseModel):
     status: Literal["open", "acknowledged", "resolved", "false_positive"]
     note: str = Field("", max_length=2000)
@@ -139,11 +150,18 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
     app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     app.state.db = db_path
 
-    if (app_mode or APP_MODE) == "operator":
+    _mode = app_mode or APP_MODE
+    if _mode == "operator":
         @app.middleware("http")
         async def _operator_gate(request, call_next):
             if not _operator_allowed(request.method, request.url.path):
                 return JSONResponse({"detail": "not available in operator mode"}, status_code=404)
+            return await call_next(request)
+    elif _mode == "playground":
+        @app.middleware("http")
+        async def _playground_gate(request, call_next):
+            if not _playground_allowed(request.method, request.url.path):
+                return JSONResponse({"detail": "not available in the playground portal"}, status_code=404)
             return await call_next(request)
 
     def get_con():
@@ -481,13 +499,15 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
 
     dist = ROOT / "ui" / "dist"
     if dist.exists():
-        if (app_mode or APP_MODE) != "operator" and (dist / "admin.html").exists():
-            # full mode (staging): admin is a superset of the operator view, so there is no reason
-            # to show the trimmed operator portal here too -- "/" goes straight to admin. Operator
-            # mode is the only deployment that actually wants the trimmed view at "/".
+        # Each app_mode gets its own portal at "/": operator keeps the default index.html (the
+        # trimmed view, StaticFiles' own default), full mode (staging) goes straight to admin
+        # (a superset of operator, no reason to show the trimmed view there too), and playground
+        # goes to its own single-purpose portal.
+        root_file = {"full": "admin.html", "playground": "playground.html"}.get(_mode)
+        if root_file and (dist / root_file).exists():
             @app.get("/", include_in_schema=False)
             def root_ui():
-                return FileResponse(dist / "admin.html")
+                return FileResponse(dist / root_file)
         app.mount("/", StaticFiles(directory=dist, html=True), name="ui")   # last: API routes win
     return app
 

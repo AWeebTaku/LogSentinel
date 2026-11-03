@@ -106,11 +106,12 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8000, help="local API/UI port (default: 8000)")
     parser.add_argument("--no-build", action="store_true", help="use the existing ui/dist without rebuilding")
     parser.add_argument("--no-streaming", action="store_true", help="skip Kafka and the alert sink")
-    parser.add_argument("--app-mode", choices=["full", "operator"], default="full",
+    parser.add_argument("--app-mode", choices=["full", "operator", "playground"], default="full",
                         help="'full' (default): the full admin suite (source/models/experiments, dashboard+alerts) "
                              "at /. 'operator': the production-facing deployment -- serves dashboard+alerts (and a "
                              "trimmed source page) only, and the API itself refuses every train/test route, not "
-                             "just hides them.")
+                             "just hides them. 'playground': a standalone portal for the personal traffic+anomaly "
+                             "test tool only (see make playground) -- nothing else is reachable, not even alerts.")
     args = parser.parse_args()
 
     python = python_executable()
@@ -143,6 +144,9 @@ def main() -> int:
         if args.app_mode == "operator":
             print(f"LogSentinel (operator mode) is ready at {url} -- dashboard + alerts only, "
                   "training/testing routes are refused. Press Ctrl+C to stop.", flush=True)
+        elif args.app_mode == "playground":
+            print(f"LogSentinel Playground is ready at {url} -- personal test tool only, nothing "
+                  "else is reachable here. Press Ctrl+C to stop.", flush=True)
         else:
             print(f"LogSentinel is ready at {url}. Press Ctrl+C to stop.", flush=True)
 

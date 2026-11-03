@@ -196,3 +196,16 @@ def test_playground_endpoints_validate_and_404_correctly(api):
     assert api.post("/playground/does-not-exist/stop").status_code == 404
     assert api.post("/playground/does-not-exist/inject", json={"count": 5}).status_code == 404
 
+
+def test_playground_mode_is_a_narrow_standalone_portal(tmp_path):
+    """--app-mode playground (make playground) serves its own portal at "/" and refuses
+    everything except /health and /playground/* -- not even alerts, unlike full or operator mode."""
+    pg = TestClient(create_app(tmp_path / "pg.db", app_mode="playground"))
+    assert pg.get("/health").status_code == 200
+    assert pg.get("/playground/current").status_code == 200
+    assert pg.get("/alerts").status_code == 404
+    assert pg.get("/models").status_code == 404
+    assert pg.get("/sources/current").status_code == 404
+    assert pg.post("/sources/watch", json={}).status_code == 404
+    assert "LogSentinel Playground" in pg.get("/").text
+
