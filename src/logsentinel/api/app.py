@@ -384,6 +384,13 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
 
     dist = ROOT / "ui" / "dist"
     if dist.exists():
+        if (app_mode or APP_MODE) != "operator" and (dist / "admin.html").exists():
+            # full mode (staging): admin is a superset of the operator view, so there is no reason
+            # to show the trimmed operator portal here too -- "/" goes straight to admin. Operator
+            # mode is the only deployment that actually wants the trimmed view at "/".
+            @app.get("/", include_in_schema=False)
+            def root_ui():
+                return FileResponse(dist / "admin.html")
         app.mount("/", StaticFiles(directory=dist, html=True), name="ui")   # last: API routes win
     return app
 

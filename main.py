@@ -107,9 +107,10 @@ def main() -> int:
     parser.add_argument("--no-build", action="store_true", help="use the existing ui/dist without rebuilding")
     parser.add_argument("--no-streaming", action="store_true", help="skip Kafka and the alert sink")
     parser.add_argument("--app-mode", choices=["full", "operator"], default="full",
-                        help="'full' (default): dashboard+alerts at /, the testing/training suite at /admin.html. "
-                             "'operator': the production-facing deployment -- serves dashboard+alerts only and the "
-                             "API itself refuses every start/stop/train/inject route, not just hides them.")
+                        help="'full' (default): the full admin suite (source/models/experiments, dashboard+alerts) "
+                             "at /. 'operator': the production-facing deployment -- serves dashboard+alerts (and a "
+                             "trimmed source page) only, and the API itself refuses every train/test route, not "
+                             "just hides them.")
     args = parser.parse_args()
 
     python = python_executable()
@@ -143,8 +144,8 @@ def main() -> int:
             print(f"LogSentinel (operator mode) is ready at {url} -- dashboard + alerts only, "
                   "training/testing routes are refused. Press Ctrl+C to stop.", flush=True)
         else:
-            print(f"LogSentinel is ready at {url} (operator view) and {url}/admin.html (admin: source/models/"
-                  f"experiments). API docs: {url}/docs. Press Ctrl+C to stop.", flush=True)
+            print(f"LogSentinel is ready at {url} (admin: source/models/experiments, dashboard, alerts). "
+                  f"API docs: {url}/docs. Press Ctrl+C to stop.", flush=True)
 
         while api.poll() is None:
             if sink is not None and sink.poll() is not None:
