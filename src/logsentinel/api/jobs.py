@@ -15,7 +15,7 @@ from pathlib import Path
 from ..common.config import KAFKA_PORT, ROOT
 from ..store import db
 
-JOB_KINDS = ("train", "source", "watch", "experiment")
+JOB_KINDS = ("train", "source", "watch", "playground", "experiment")
 BUNDLE_RE = r"^(active:[a-z0-9_-]+|models/[A-Za-z0-9._-]+)$"
 
 
@@ -70,7 +70,7 @@ def refresh(con, run: dict) -> dict:
         return db.update_run(con, run["id"], status="succeeded", model_id=m["id"])
     summary = _load_summary(run)
     extra = {"summary": summary} if summary is not None else {}
-    if run["kind"] in ("source", "watch") and ok and progress(run).get("phase") == "stopped":
+    if run["kind"] in ("source", "watch", "playground") and ok and progress(run).get("phase") == "stopped":
         return db.update_run(con, run["id"], status="stopped", **extra)
     return db.update_run(con, run["id"], status="succeeded" if ok else "failed", **extra)
 
@@ -98,9 +98,9 @@ def progress(run: dict) -> dict:
         return {}
 
 
-def running_job(con, kinds=("source", "watch", "experiment")) -> dict | None:
+def running_job(con, kinds=("source", "watch", "playground", "experiment")) -> dict | None:
     """The job currently holding logs-raw's consumer group (sources/experiments also recreate the
-    topic; watch does not, but still can't share it with one that does)."""
+    topic; watch/playground do not, but still can't share it with one that does)."""
     for r in db.list_runs(con):
         if r["kind"] in kinds and refresh(con, r)["status"] == "running":
             return r

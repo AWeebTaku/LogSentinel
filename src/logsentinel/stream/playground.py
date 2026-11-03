@@ -19,6 +19,7 @@ import json
 import random
 import signal
 import time
+from pathlib import Path
 
 from confluent_kafka import Producer
 
@@ -26,28 +27,38 @@ from ..common.config import KAFKA_BOOTSTRAP
 from ..experiments.stream_e2e import replay_events
 from ..features.counts import load_or_build
 from . import inject, pools
+from .admin import ensure_topics
 from .wire import TOPIC_RAW, hdfs_log_time
 
 
 def run(rate: float, bootstrap: str, anomaly_every: tuple[float, float], anomaly_count: tuple[int, int],
-        seed: int = 0) -> None:
+        seed: int = 0, run_dir: Path | None = None) -> None:
     cf = load_or_build("hdfs", "chronological")
     _, events = replay_events(cf, None)
     pool = pools.load()
+    ensure_topics(bootstrap, recreate=False)   # never wipes logs-raw: something else may already be consuming it
     rng = random.Random(seed)
     stop = {"flag": False}
     signal.signal(signal.SIGTERM, lambda *_: stop.update(flag=True))
     signal.signal(signal.SIGINT, lambda *_: stop.update(flag=True))
+
+    def progress(phase: str, sent: int, tag: int, watermark: float) -> None:
+        if run_dir:
+            (run_dir / "progress.json").write_text(json.dumps({
+                "phase": phase, "sent": sent, "total": 0, "anomaly_bursts": tag, "watermark": watermark,
+                "updated_ns": time.time_ns()}))
 
     p = Producer({"bootstrap.servers": bootstrap, "linger.ms": 5, "acks": 1})
     sent = tag = 0
     watermark = 0.0
     t0 = time.perf_counter()
     next_report = t0 + 5
+    next_progress = t0
     next_anomaly = t0 + rng.uniform(*anomaly_every)
     print(f"[playground] personal test tool, not production: {len(events):,} log lines/lap, "
           f"~{rate:.0f} events/s, anomaly burst every {anomaly_every[0]:.0f}-{anomaly_every[1]:.0f}s "
           f"({anomaly_count[0]}-{anomaly_count[1]} sessions each). Ctrl+C to stop.", flush=True)
+    progress("running", 0, 0, 0.0)
     try:
         while not stop["flag"]:
             order = list(range(len(events)))
@@ -75,6 +86,9 @@ def run(rate: float, bootstrap: str, anomaly_every: tuple[float, float], anomaly
                     print(f"[playground] {sent:,} events sent, {sent / (now - t0):.0f} events/s avg, "
                           f"{tag} anomaly burst(s) injected", flush=True)
                     next_report = now + 5
+                if now >= next_progress:
+                    progress("running", sent, tag, watermark)
+                    next_progress = now + 1
                 if now >= next_anomaly and watermark:
                     tag = (tag + 1) % 1000
                     count = rng.randint(*anomaly_count)
@@ -85,6 +99,7 @@ def run(rate: float, bootstrap: str, anomaly_every: tuple[float, float], anomaly
                     next_anomaly = now + rng.uniform(*anomaly_every)
     finally:
         p.flush(30)
+        progress("stopped", sent, tag, watermark)
         print(f"[playground] stopped: {sent:,} events sent, {tag} anomaly burst(s) injected", flush=True)
 
 
@@ -97,8 +112,9 @@ def main() -> None:
                     help="random anomalous-session count per burst (default 10 50)")
     ap.add_argument("--bootstrap", default=KAFKA_BOOTSTRAP)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--run-dir", type=Path, default=None, help="write progress.json here (used by the admin UI)")
     a = ap.parse_args()
-    run(a.rate, a.bootstrap, tuple(a.anomaly_every), tuple(a.anomaly_count), a.seed)
+    run(a.rate, a.bootstrap, tuple(a.anomaly_every), tuple(a.anomaly_count), a.seed, a.run_dir)
 
 
 if __name__ == "__main__":

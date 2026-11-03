@@ -96,6 +96,19 @@ class InjectRequest(BaseModel):
     count: int = Field(100, ge=1, le=2000, description="anomalous sessions to inject")
 
 
+class PlaygroundStart(BaseModel):
+    """Personal test tool (stream/playground.py): ordinary traffic plus random anomaly bursts on a
+    timer, so you can exercise detect -> triage -> retrain-feedback without a real log source or
+    clicking Inject by hand. Not production -- there is no real log-generating system behind this
+    project yet."""
+    rate: float = Field(2000, ge=10, le=200_000, description="events/s for ordinary traffic")
+    anomaly_every_min: float = Field(60, ge=5, le=3600, description="shortest gap between anomaly bursts, seconds")
+    anomaly_every_max: float = Field(180, ge=5, le=3600, description="longest gap between anomaly bursts, seconds")
+    anomaly_count_min: int = Field(10, ge=1, le=2000, description="smallest random burst size")
+    anomaly_count_max: int = Field(50, ge=1, le=2000, description="largest random burst size")
+    seed: int = 0
+
+
 class ExperimentRequest(BaseModel):
     preset: Literal["stream_benchmark", "offline_report", "offline_subset"]
     rate: int = Field(5000, ge=0, le=200_000, description="stream_benchmark: events/s, 0 = burst")
@@ -336,6 +349,71 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
     @app.get("/sources/{run_id}/injections")
     def injections(run_id: str, con=Depends(get_con)):
         return {"items": db.injection_results(con, run_id)}
+
+    # ---- playground (personal test tool: traffic + random anomaly bursts, see stream/playground.py) ----
+    @app.post("/playground/start", status_code=202)
+    def start_playground(body: PlaygroundStart, con=Depends(get_con)):
+        if body.anomaly_every_min > body.anomaly_every_max or body.anomaly_count_min > body.anomaly_count_max:
+            raise HTTPException(422, "each *_min must be <= its *_max")
+        if not jobs.kafka_up():
+            raise HTTPException(503, f"Kafka is not running on {KAFKA_BOOTSTRAP} (scripts/kafka.sh start)")
+        busy = jobs.running_job(con)
+        if busy:
+            raise HTTPException(409, f"{busy['kind']} {busy['id']!r} is already running; stop it first")
+        run_id = f"pg-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}"
+        rd = ROOT / "results" / "sources" / run_id
+        pid = jobs.launch([sys.executable, "-m", "logsentinel.stream.playground",
+                           "--rate", str(body.rate),
+                           "--anomaly-every", str(body.anomaly_every_min), str(body.anomaly_every_max),
+                           "--anomaly-count", str(body.anomaly_count_min), str(body.anomaly_count_max),
+                           "--seed", str(body.seed), "--run-dir", str(rd)], rd)
+        return db.create_run(con, run_id, "playground", body.model_dump(), pid=pid, run_dir=str(rd))
+
+    @app.get("/playground/current")
+    def current_playground(con=Depends(get_con)):
+        runs = [jobs.refresh(con, r) for r in db.list_runs(con, "playground")]
+        run = next((r for r in runs if r["status"] == "running"), runs[0] if runs else None)
+        return {"run": run, "progress": jobs.progress(run) if run else {}}
+
+    @app.post("/playground/{run_id}/stop")
+    def stop_playground(run_id: str, con=Depends(get_con)):
+        run = db.get_run(con, run_id)
+        if run is None or run["kind"] != "playground":
+            raise HTTPException(404, "playground run not found")
+        run = jobs.refresh(con, run)
+        if run["status"] != "running":
+            raise HTTPException(409, f"playground is {run['status']}, not running")
+        try:
+            os.kill(run["pid"], signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        return run
+
+    @app.post("/playground/{run_id}/inject", status_code=202)
+    def inject_playground_now(run_id: str, body: InjectRequest, con=Depends(get_con)):
+        """Fire an anomaly burst immediately, on top of playground's own random timer. No results
+        table like /sources/{id}/inject's: the engine consuming playground's traffic (started
+        separately, e.g. via Source's "watch" mode) runs under its own run id, not this one, so
+        there's no single run to join detections against."""
+        from ..stream import inject as inj
+        from ..stream import pools
+        run = db.get_run(con, run_id)
+        run = jobs.refresh(con, run) if run else None
+        if run is None or run["kind"] != "playground":
+            raise HTTPException(404, "playground run not found")
+        if run["status"] != "running":
+            raise HTTPException(409, "playground is not running")
+        wm = jobs.progress(run).get("watermark")
+        if not wm:
+            raise HTTPException(409, "no live traffic yet from this playground run; try again in a few seconds")
+        try:
+            pool = pools.load()
+        except FileNotFoundError as e:
+            raise HTTPException(409, str(e)) from e
+        tag = (con.execute("SELECT COALESCE(MAX(id), 0) FROM injections").fetchone()[0] + 1) % 1000
+        events, keys = inj.build_burst(pool, body.count, wm, tag)
+        inj.send(events, KAFKA_BOOTSTRAP)
+        return {"count": len(keys), "lines": len(events), "stream_time": wm}
 
     # ---- experiments ----
     @app.post("/experiments/run", status_code=202)

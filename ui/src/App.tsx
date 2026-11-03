@@ -10,6 +10,7 @@ import Alerts from "./pages/Alerts";
 import Dashboard from "./pages/Dashboard";
 import Experiments from "./pages/Experiments";
 import Models from "./pages/Models";
+import Playground from "./pages/Playground";
 import Source from "./pages/Source";
 import { useTheme } from "./theme";
 
@@ -19,9 +20,11 @@ import { useTheme } from "./theme";
 // hidden nav.
 // admin: the full testing/training suite on top, for whoever is standing the system up or
 // evaluating models -- a separate build (admin.html) kept out of the operator deployment.
+// Playground is admin-only too: it's a personal test tool (fake traffic + fake anomalies), never
+// reachable from the operator build.
 const VARIANTS = {
   operator: ["/", "/alerts", "/source"],
-  admin: ["/", "/alerts", "/source", "/models", "/experiments"],
+  admin: ["/", "/alerts", "/source", "/models", "/experiments", "/playground"],
 } as const;
 
 export type AppVariant = keyof typeof VARIANTS;
@@ -32,6 +35,7 @@ const pages = (variant: AppVariant) => ({
   "/source": { label: "Source", element: <Source variant={variant} /> },
   "/models": { label: "Models", element: <Models /> },
   "/experiments": { label: "Experiments", element: <Experiments /> },
+  "/playground": { label: "Playground", element: <Playground /> },
 });
 
 function SourceBadge() {

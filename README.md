@@ -493,13 +493,16 @@ It runs forever (real HDFS log lines, reshuffled each lap, no fixed end) until y
 exactly like a real external process would. When a real log shipper exists, it publishes to the
 same topic and nothing else changes.
 
-> **`make playground` is a personal test tool, not anything production-related.** There is no real
-> log-generating system behind this project (nothing like `live_feed.py` exists for real traffic
-> yet), so this exists purely to let you exercise the full loop by hand: it sends ordinary traffic
-> like `live_feed.py`, but also fires random anomaly bursts on a timer (the same mechanism as
-> admin's "Inject anomaly burst" button), so you can watch an alert appear, triage it yourself
-> (resolved or false positive), and check whether `make retrain-feedback` picks it up. Run it
-> against **staging only** — `python -m logsentinel.stream.playground --help` for the timing knobs.
+> **Playground is a personal test tool, not anything production-related.** There is no real
+> log-generating system behind this project, so this exists purely to let you exercise the full
+> loop: it sends ordinary traffic like `live_feed.py`, but also fires random anomaly bursts on a
+> timer, so you can watch an alert appear, triage it yourself (resolved or false positive), and
+> check whether `make retrain-feedback` picks it up. It has its own page in the admin UI (**Playground**
+> in the nav) — start/stop it, set the burst timing, and fire a burst immediately with **Inject
+> now** instead of waiting for the timer. Pair it with Source's "Watch an external feed" mode to
+> actually see alerts appear (Playground only produces traffic; it doesn't detect anything itself).
+> `make playground` / `python -m logsentinel.stream.playground --help` for the command-line
+> equivalent. Run it against **staging only**.
 
 ### Setting up a real log source
 
@@ -553,16 +556,17 @@ separate machines, just run one instance per machine with the right `--app-mode`
 env-var juggling matters since each machine only ever runs one instance.
 
 **Testing the detect → triage → retrain loop** (see "Retraining" below) is a staging-only exercise
-— it doesn't need production or `live-feed` at all, just two terminals:
+— it doesn't need production or `live-feed` at all, and doesn't even need a second terminal: run
+`make staging`, open the **Playground** page and click Start, then go to **Source** and start
+"Watch an external feed" — that's the engine actually scoring what Playground is sending. Watch an
+alert land on the Dashboard, mark it resolved or false positive on the Alerts page, then run
+`make retrain-feedback` and check the Models page for the new (unactivated) bundle.
 
+The command-line equivalent, two terminals:
 ```bash
 make staging        # admin UI, terminal 1
-make playground      # terminal 2 -- feeds staging's own Kafka (default port 9092) with
-                      # ordinary traffic plus random anomaly bursts, so alerts actually appear
-                      # for you to triage without waiting or clicking "Inject" by hand
+make playground      # terminal 2 -- feeds staging's own Kafka (default port 9092)
 ```
-Watch an alert land on the Dashboard, mark it resolved or false positive on the Alerts page, then
-run `make retrain-feedback` and check the Models page for the new (unactivated) bundle.
 
 ### Retraining
 

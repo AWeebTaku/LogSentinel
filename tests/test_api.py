@@ -180,4 +180,19 @@ def test_operator_gate_predicate_blocks_testing_but_allows_watch_start_stop():
     assert not allowed("GET", "/sources/src-123/injections")    # testing-only artifact
     assert not allowed("POST", "/models/train")
     assert not allowed("POST", "/models/1/activate")
+    assert not allowed("POST", "/playground/start")              # personal test tool: admin-only
+    assert not allowed("POST", "/playground/pg-123/inject")
+
+
+def test_playground_endpoints_validate_and_404_correctly(api):
+    """Full start/stop/inject against a real running playground needs a live Kafka broker (e2e
+    territory); this covers what's reachable without one: input validation and not-found paths."""
+    r = api.post("/playground/start", json={"anomaly_every_min": 100, "anomaly_every_max": 10})
+    assert r.status_code == 422 and "min" in r.json()["detail"]
+    r = api.post("/playground/start", json={"anomaly_count_min": 50, "anomaly_count_max": 5})
+    assert r.status_code == 422
+
+    assert api.get("/playground/current").json() == {"run": None, "progress": {}}
+    assert api.post("/playground/does-not-exist/stop").status_code == 404
+    assert api.post("/playground/does-not-exist/inject", json={"count": 5}).status_code == 404
 

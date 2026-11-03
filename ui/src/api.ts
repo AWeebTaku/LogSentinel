@@ -67,6 +67,7 @@ export interface Run {
 }
 export interface Progress {
   phase?: string; sent?: number; total?: number; scenario?: string; rate?: number; workers?: number;
+  anomaly_bursts?: number; watermark?: number;
 }
 export interface Model {
   id: number; name: string; version: number; path: string; dataset: string; status: string;
@@ -96,6 +97,12 @@ export const api = {
   inject: (id: string, count: number) =>
     post<{ injection_id: number; count: number; lines: number }>(`/sources/${id}/inject`, { scenario: "anomaly_burst", count }),
   injections: (id: string) => req<{ items: Injection[] }>(`/sources/${id}/injections`),
+  currentPlayground: () => req<{ run: Run | null; progress: Progress }>("/playground/current"),
+  startPlayground: (b: { rate: number; anomaly_every_min: number; anomaly_every_max: number;
+                         anomaly_count_min: number; anomaly_count_max: number }) => post<Run>("/playground/start", b),
+  stopPlayground: (id: string) => post<Run>(`/playground/${id}/stop`),
+  injectPlaygroundNow: (id: string, count: number) =>
+    post<{ count: number; lines: number; stream_time: number }>(`/playground/${id}/inject`, { scenario: "anomaly_burst", count }),
   models: () => req<{ items: Model[] }>("/models"),
   registerModel: (path: string, name?: string) => post<Model>("/models/register", { path, name: name || undefined }),
   activateModel: (id: number) => post<Model>(`/models/${id}/activate`),
