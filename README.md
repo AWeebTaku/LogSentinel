@@ -9,6 +9,27 @@ It was built as both a working application and a measurement instrument: every p
 (ingestion, parsing, scoring, alerting) is timed and counted, so throughput, latency, and detection
 quality are things the app actually produces, not numbers asserted in a slide deck.
 
+**New here?** Skip straight to [setup](#1-install-python-312) and [running it](#6-run-the-app--operator-vs-admin).
+
+<details>
+<summary><strong>Contents</strong></summary>
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project structure](#project-structure)
+- [Requirements](#requirements)
+- [1. Install Python 3.12](#1-install-python-312)
+- [2. Install Node.js](#2-install-nodejs)
+- [3. Clone and install LogSentinel](#3-clone-and-install-logsentinel)
+- [4. Set up Kafka](#4-set-up-kafka)
+- [5. Download the sample dataset and train a model](#5-download-the-sample-dataset-and-train-a-model)
+- [6. Run the app — operator vs. admin](#6-run-the-app--operator-vs-admin)
+- [7. Testing](#7-testing)
+- [Troubleshooting](#troubleshooting)
+- [Deployment note](#deployment-note)
+
+</details>
+
 ## Features
 
 - **Streaming ingestion** over Apache Kafka: a replayable producer feeds raw log lines through a
@@ -107,7 +128,8 @@ repository — they aren't needed to install or run the application.
 Pick your platform. Skip this section if `python3.12 --version` (or `python3 --version` showing
 3.12+) already works.
 
-### Ubuntu / Debian
+<details>
+<summary><strong>Ubuntu / Debian</strong></summary>
 
 ```bash
 sudo apt update
@@ -120,13 +142,19 @@ sudo apt update
 sudo apt install -y python3.12 python3.12-venv python3.12-dev git build-essential
 ```
 
-### Fedora / RHEL / CentOS Stream
+</details>
+
+<details>
+<summary><strong>Fedora / RHEL / CentOS Stream</strong></summary>
 
 ```bash
 sudo dnf install -y python3.12 git @development-tools
 ```
 
-### Arch Linux / Manjaro
+</details>
+
+<details>
+<summary><strong>Arch Linux / Manjaro</strong></summary>
 
 Arch's `python` package tracks the latest CPython release, which usually satisfies `>=3.12` on its
 own:
@@ -151,20 +179,29 @@ pyenv local 3.12.14     # sets this version for the logsentinel/ directory
 > the repo) first, or call the interpreter directly:
 > `~/.pyenv/versions/3.12.14/bin/python3.12 -m venv .venv`.
 
-### openSUSE
+</details>
+
+<details>
+<summary><strong>openSUSE</strong></summary>
 
 ```bash
 sudo zypper install -y python312 python312-devel git patterns-devel-base-devel_basis
 ```
 
-### macOS
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
 
 ```bash
 # Install Homebrew first if you don't have it: https://brew.sh
 brew install python@3.12 git
 ```
 
-### Windows
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 Only needed if you're going the **native Windows Python** route (Docker Compose for Kafka — see
 the Windows section below). If you're using **WSL2** (recommended), install Python inside the WSL2
@@ -177,6 +214,8 @@ winget install -e --id Python.Python.3.12
 or download the installer from [python.org/downloads](https://www.python.org/downloads/) and make
 sure "Add python.exe to PATH" is checked during install.
 
+</details>
+
 ---
 
 ## 2. Install Node.js
@@ -186,7 +225,8 @@ Needed everywhere the UI is built. The easiest cross-platform option is
 [nvm-windows](https://github.com/coreybutler/nvm-windows) (Windows), since distro package managers
 often ship an outdated Node that Vite 8 will refuse to run.
 
-### Linux (any distro) / macOS — via nvm
+<details>
+<summary><strong>Linux (any distro) / macOS — via nvm</strong></summary>
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
@@ -195,7 +235,10 @@ nvm install 22
 nvm use 22
 ```
 
-### Linux — via distro package manager (alternative)
+</details>
+
+<details>
+<summary><strong>Linux — via distro package manager (alternative)</strong></summary>
 
 ```bash
 # Ubuntu / Debian (NodeSource, gives a current LTS — apt's own nodejs package is usually too old)
@@ -209,19 +252,27 @@ sudo dnf module install -y nodejs:22
 sudo pacman -S nodejs npm
 ```
 
-### macOS — via Homebrew (alternative)
+</details>
+
+<details>
+<summary><strong>macOS — via Homebrew (alternative)</strong></summary>
 
 ```bash
 brew install node@22
 ```
 
-### Windows
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 ```powershell
 winget install -e --id OpenJS.NodeJS.LTS
 ```
 
 or via nvm-windows, or inside WSL2 using the Linux instructions above.
+
+</details>
 
 ---
 
@@ -252,7 +303,8 @@ python -m pip install -e '.[dev]'
 This step only gets Kafka itself ready. How to actually start and use the app (which launches
 Kafka for you on Linux) is step 6, once you have a trained model to run it against.
 
-### Linux x86-64 (native, recommended, no Docker)
+<details open>
+<summary><strong>Linux x86-64 (native, recommended, no Docker)</strong></summary>
 
 Nothing to install manually — `python main.py` (step 6) bootstraps a checksum-verified Java 17 +
 Kafka 3.9.1 under `~/.local/share/logsentinel` on first run. If you'd rather drive Kafka directly:
@@ -265,7 +317,10 @@ scripts/kafka.sh stop      # stop it
 scripts/kafka.sh reset     # wipe local broker storage (see Troubleshooting below)
 ```
 
-### macOS
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
 
 The native Kafka bootstrap script downloads Linux x86-64 binaries, so it doesn't run on macOS.
 Use Docker Compose instead; the app itself still runs natively:
@@ -282,7 +337,10 @@ so pass `--no-streaming` to any `python main.py` command in step 6 — Kafka's a
 
 Stop it with `docker compose down` when done.
 
-### Windows
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 The native Kafka bootstrap script is a Bash script using Linux-only process controls
 (`taskset`), and `confluent-kafka`'s Python C-extension is far better supported on Linux/macOS
@@ -307,6 +365,8 @@ docker compose up -d
 ```
 
 Same as macOS: pass `--no-streaming` to any `python main.py` command in step 6.
+
+</details>
 
 ---
 
@@ -388,9 +448,10 @@ register the bundle folder, then click **Activate**.)
 Two roles, two separate single-page apps, one Makefile command each:
 
 - **Admin** — whoever *builds and maintains* the system: trains and validates models, runs test
-  replays, reviews benchmark experiments. `make staging` → `http://localhost:8000/admin.html`.
-  Full suite: Source replay (with scenario/injection controls), Models, Experiments, plus
-  Dashboard and Alerts for context.
+  replays, reviews benchmark experiments. `make staging` → `http://localhost:8000/`. Full suite:
+  Source replay (with scenario/injection controls), Models, Experiments, plus Dashboard and Alerts
+  for context — admin is a superset of what operator shows, so it's served directly at `/`, with
+  no separate trimmed portal to also open here.
 - **Operator** — whoever's job is just to *watch* the system run (a SOC/NOC analyst, whoever's on
   alert-triage duty, not necessarily the same person who set it up). `make production` →
   `http://localhost:8001/`. Dashboard, Alerts, and a trimmed Source page that only ever
@@ -398,10 +459,10 @@ Two roles, two separate single-page apps, one Makefile command each:
   runs whatever was promoted to it). Those stay admin-only, refused server-side even by a direct
   API call, not just hidden in the nav.
 
-Just want to see it work? `make staging`, open `http://localhost:8000/admin.html`, go to Source
-and click **Start source** — that alone replays real HDFS logs through the whole pipeline and
-raises real alerts, no second instance or external generator needed. The rest of this section is
-for running it the way an actual deployment would: operator and admin genuinely separated.
+Just want to see it work? `make staging`, open `http://localhost:8000/`, go to Source and click
+**Start source** — that alone replays real HDFS logs through the whole pipeline and raises real
+alerts, no second instance or external generator needed. The rest of this section is for running
+it the way an actual deployment would: operator and admin genuinely separated.
 
 `make staging` and `make production` are genuinely separate instances — each gets its own Kafka
 broker, database, and model directory (`LOGSENTINEL_KAFKA_PORT`, `LOGSENTINEL_TOOLS`,
