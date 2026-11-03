@@ -1,7 +1,8 @@
 # Python environments, caches, and build output
 .venv/
 venv/
-.python-version          # machine-local pyenv pin, not a repo-wide version mandate
+# machine-local pyenv pin, not a repo-wide version mandate
+.python-version
 __pycache__/
 *.py[cod]
 *.egg-info/
