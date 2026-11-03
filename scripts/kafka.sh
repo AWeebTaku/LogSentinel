@@ -6,6 +6,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 T="${LOGSENTINEL_TOOLS:-$HOME/.local/share/logsentinel}"   # must not contain spaces (Kafka scripts break)
+PORT="${LOGSENTINEL_KAFKA_PORT:-9092}"   # a second instance (e.g. staging) sets both this and LOGSENTINEL_TOOLS
+CPORT=$((PORT + 1))                      # controller listener, kept one above the broker port
 JDK_URL="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz"
 JDK_SHA256="3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e"
 KAFKA_VER="3.9.1"
@@ -44,9 +46,9 @@ start)
   cat > "$CONF" <<EOF
 process.roles=broker,controller
 node.id=1
-controller.quorum.voters=1@127.0.0.1:9093
-listeners=PLAINTEXT://127.0.0.1:9092,CONTROLLER://127.0.0.1:9093
-advertised.listeners=PLAINTEXT://127.0.0.1:9092
+controller.quorum.voters=1@127.0.0.1:$CPORT
+listeners=PLAINTEXT://127.0.0.1:$PORT,CONTROLLER://127.0.0.1:$CPORT
+advertised.listeners=PLAINTEXT://127.0.0.1:$PORT
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=PLAINTEXT
 listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
@@ -72,7 +74,7 @@ EOF
     KAFKA_HEAP_OPTS="-Xms512m -Xmx1g" nohup "$KDIR/bin/kafka-server-start.sh" "$CONF" > "$T/kafka.log" 2>&1 &
   echo $! > "$PIDF"
   for _ in $(seq 60); do
-    if grep -q "Kafka Server started" "$T/kafka.log" 2>/dev/null; then echo "kafka up (pid $(cat "$PIDF"))"; exit 0; fi
+    if grep -q "Kafka Server started" "$T/kafka.log" 2>/dev/null; then echo "kafka up on port $PORT (pid $(cat "$PIDF"))"; exit 0; fi
     sleep 1
   done
   echo "kafka did not start; see $T/kafka.log" >&2; exit 1 ;;

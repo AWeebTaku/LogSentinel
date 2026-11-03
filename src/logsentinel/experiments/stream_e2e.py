@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..common.config import KAFKA_BOOTSTRAP as BOOTSTRAP
 from ..common.config import ROOT
 from ..common.env import capture_env
 from ..features.counts import load_or_build
@@ -26,8 +27,6 @@ from ..stream.engine import resolve_bundle
 from ..stream.producer import load_replay, replay
 from ..stream.ready import wait_ready
 from . import metrics as mt
-
-BOOTSTRAP = "127.0.0.1:9092"
 
 
 def replay_events(cf, n_sessions: int | None):

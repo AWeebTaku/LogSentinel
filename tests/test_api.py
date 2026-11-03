@@ -122,3 +122,26 @@ def test_train_rejects_bad_parameters(api):
     assert api.post("/models/train", json={"name": "../evil"}).status_code == 422
     assert api.post("/models/train", json={"early_age": -1}).status_code == 422
 
+
+def test_operator_mode_refuses_admin_routes_but_keeps_monitoring(tmp_path):
+    """LOGSENTINEL_APP_MODE=operator (the production-facing deployment) must not expose anything
+    that starts/stops/trains/injects -- even direct calls, not just a hidden nav -- while still
+    serving live monitoring + alert triage for the Dashboard/Alerts operator UI."""
+    path = tmp_path / "api.db"
+    with db.connect(path) as con:
+        db.insert_alerts(con, [{"id": "blk_1", "score": 0.5, "kind": "incremental", "run": "r", "model": "m",
+                                "t_trigger_send_ns": 1}])
+    op = TestClient(create_app(path, app_mode="operator"))
+    assert op.get("/health").status_code == 200
+    assert op.get("/alerts").status_code == 200
+    assert op.get("/alerts/stats").status_code == 200
+    assert op.get("/metrics", params={"run": "r"}).status_code == 200
+    assert op.get("/sources/current").status_code == 200
+    assert op.patch("/alerts/1", json={"status": "acknowledged"}).status_code == 200
+    assert op.get("/models").status_code == 404
+    assert op.get("/runs").status_code == 404
+    assert op.post("/models/train", json={}).status_code == 404
+    assert op.post("/sources/start", json={}).status_code == 404
+    assert op.post("/sources/r/inject", json={}).status_code == 404
+    assert op.post("/experiments/run", json={}).status_code == 404
+

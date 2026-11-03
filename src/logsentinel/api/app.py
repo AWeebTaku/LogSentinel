@@ -14,15 +14,31 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ..common.config import ROOT
+from ..common.config import KAFKA_BOOTSTRAP, ROOT
 from ..store import db
 from . import jobs
 
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
+
+# "full" (default: local dev, main.py) serves everything. "operator" is the production-facing
+# deployment: live monitoring + alert triage only, nothing that starts/stops/trains/injects
+# anything. Gated server-side (not just hidden in the UI) so a stray curl or a tampered frontend
+# can't reach training/testing controls from an operator-mode process.
+APP_MODE = os.environ.get("LOGSENTINEL_APP_MODE", "full")
+
+
+def _operator_allowed(method: str, path: str) -> bool:
+    if path in ("/", "/index.html", "/health", "/docs", "/openapi.json", "/redoc") or path.startswith("/assets/"):
+        return True
+    if method == "GET" and (path == "/sources/current" or path == "/metrics"):
+        return True
+    if path.startswith("/alerts"):
+        return method in ("GET", "PATCH")
+    return False
 
 
 class AlertPatch(BaseModel):
@@ -87,10 +103,17 @@ def _inside(path: str, base: Path) -> Path:
     return p
 
 
-def create_app(db_path: Path | None = None) -> FastAPI:
+def create_app(db_path: Path | None = None, app_mode: str | None = None) -> FastAPI:
     app = FastAPI(title="LogSentinel API", version="0.1.0")
     app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     app.state.db = db_path
+
+    if (app_mode or APP_MODE) == "operator":
+        @app.middleware("http")
+        async def _operator_gate(request, call_next):
+            if not _operator_allowed(request.method, request.url.path):
+                return JSONResponse({"detail": "not available in operator mode"}, status_code=404)
+            return await call_next(request)
 
     def get_con():
         with db.connect(app.state.db) as con:
@@ -199,7 +222,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.post("/sources/start", status_code=202)
     def start_source(body: StartSource, con=Depends(get_con)):
         if not jobs.kafka_up():
-            raise HTTPException(503, "Kafka is not running on 127.0.0.1:9092 (scripts/kafka.sh start)")
+            raise HTTPException(503, f"Kafka is not running on {KAFKA_BOOTSTRAP} (scripts/kafka.sh start)")
         busy = jobs.running_job(con)
         if busy:
             raise HTTPException(409, f"{busy['kind']} {busy['id']!r} is already running; stop it first")
@@ -251,7 +274,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             raise HTTPException(409, str(e)) from e
         tag = (con.execute("SELECT COALESCE(MAX(id), 0) FROM injections").fetchone()[0] + 1) % 1000
         events, keys = inj.build_burst(pool, body.count, wm, tag)
-        inj.send(events, "127.0.0.1:9092")
+        inj.send(events, KAFKA_BOOTSTRAP)
         return {"injection_id": db.record_injection(con, run_id, body.scenario, keys, wm), "count": len(keys),
                 "lines": len(events), "stream_time": wm}
 
@@ -264,7 +287,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def run_experiment(body: ExperimentRequest, con=Depends(get_con)):
         if body.preset == "stream_benchmark":
             if not jobs.kafka_up():
-                raise HTTPException(503, "Kafka is not running on 127.0.0.1:9092 (scripts/kafka.sh start)")
+                raise HTTPException(503, f"Kafka is not running on {KAFKA_BOOTSTRAP} (scripts/kafka.sh start)")
             busy = jobs.running_job(con)
             if busy:
                 raise HTTPException(409, f"{busy['kind']} {busy['id']!r} is running and shares the Kafka topics")

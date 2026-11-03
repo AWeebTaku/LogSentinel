@@ -15,6 +15,7 @@ import sys
 import time
 import traceback
 
+from ..common.config import KAFKA_BOOTSTRAP as BOOTSTRAP
 from ..common.config import ROOT
 from ..common.env import capture_env
 from ..experiments.stream_e2e import replay_events, summarize
@@ -25,7 +26,6 @@ from .engine import resolve_bundle
 from .producer import replay_segments
 from .ready import wait_ready
 
-BOOTSTRAP = "127.0.0.1:9092"
 SPIKE = (0.4, 0.2, 0.4)      # share of events at base rate, at 10x base rate, at base rate again
 
 

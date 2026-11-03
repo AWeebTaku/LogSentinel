@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..common.config import ROOT
+from ..common.config import KAFKA_PORT, ROOT
 from ..store import db
 
 JOB_KINDS = ("train", "source", "experiment")
@@ -29,7 +29,7 @@ def launch(cmd: list[str], run_dir: Path) -> int:
 
 def kafka_up() -> bool:
     try:
-        socket.create_connection(("127.0.0.1", 9092), timeout=1).close()
+        socket.create_connection(("127.0.0.1", KAFKA_PORT), timeout=1).close()
         return True
     except OSError:
         return False

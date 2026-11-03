@@ -46,9 +46,13 @@ def build_ui() -> None:
     subprocess.run(["npm", "run", "build"], cwd=ui_dir, check=True)
 
 
+def kafka_port() -> int:
+    return int(os.environ.get("LOGSENTINEL_KAFKA_PORT", "9092"))
+
+
 def kafka_reachable() -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", 9092), timeout=0.5):
+        with socket.create_connection(("127.0.0.1", kafka_port()), timeout=0.5):
             return True
     except OSError:
         return False
@@ -56,7 +60,7 @@ def kafka_reachable() -> bool:
 
 def start_kafka() -> bool:
     if kafka_reachable():
-        print("Kafka already available on 127.0.0.1:9092")
+        print(f"Kafka already available on 127.0.0.1:{kafka_port()}")
         return False
 
     tools_dir = Path(os.environ.get("LOGSENTINEL_TOOLS", Path.home() / ".local/share/logsentinel"))
@@ -69,7 +73,7 @@ def start_kafka() -> bool:
         if kafka_reachable():
             return True
         time.sleep(1)
-    raise RuntimeError("Kafka did not become available at 127.0.0.1:9092")
+    raise RuntimeError(f"Kafka did not become available at 127.0.0.1:{kafka_port()}")
 
 
 def wait_for_api(api: subprocess.Popen, url: str) -> None:
@@ -102,10 +106,15 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8000, help="local API/UI port (default: 8000)")
     parser.add_argument("--no-build", action="store_true", help="use the existing ui/dist without rebuilding")
     parser.add_argument("--no-streaming", action="store_true", help="skip Kafka and the alert sink")
+    parser.add_argument("--app-mode", choices=["full", "operator"], default="full",
+                        help="'full' (default): dashboard+alerts at /, the testing/training suite at /admin.html. "
+                             "'operator': the production-facing deployment -- serves dashboard+alerts only and the "
+                             "API itself refuses every start/stop/train/inject route, not just hides them.")
     args = parser.parse_args()
 
     python = python_executable()
     env = child_environment()
+    env["LOGSENTINEL_APP_MODE"] = args.app_mode
     sink = api = None
     kafka_started = False
     try:
@@ -130,7 +139,12 @@ def main() -> int:
             env=env,
         )
         wait_for_api(api, url)
-        print(f"LogSentinel is ready at {url} (API docs: {url}/docs). Press Ctrl+C to stop.", flush=True)
+        if args.app_mode == "operator":
+            print(f"LogSentinel (operator mode) is ready at {url} -- dashboard + alerts only, "
+                  "training/testing routes are refused. Press Ctrl+C to stop.", flush=True)
+        else:
+            print(f"LogSentinel is ready at {url} (operator view) and {url}/admin.html (admin: source/models/"
+                  f"experiments). API docs: {url}/docs. Press Ctrl+C to stop.", flush=True)
 
         while api.poll() is None:
             if sink is not None and sink.poll() is not None:

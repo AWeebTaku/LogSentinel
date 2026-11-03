@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 from confluent_kafka import Consumer
 
+from ..common.config import KAFKA_BOOTSTRAP as BOOTSTRAP
 from ..common.config import ROOT
 from ..common.env import capture_env
 from ..features.counts import load_or_build
@@ -33,8 +34,7 @@ from ..stream.wire import TOPIC_METRICS
 from .stream_e2e import replay_events
 from .sysmon import SysSampler
 
-BOOTSTRAP = "127.0.0.1:9092"
-KAFKA_PID_FILE = Path.home() / ".local/share/logsentinel/kafka.pid"
+KAFKA_PID_FILE = Path(os.environ.get("LOGSENTINEL_TOOLS", Path.home() / ".local/share/logsentinel")) / "kafka.pid"
 SESSION_STEPS = [2000, 8000, 20000, 40000, 80000, 130000, 172519]   # cached replay sizes (test sessions)
 LINES_PER_SESSION = 16.6                                              # test split: 2,859,006 lines / 172,519 sessions
 BROKER_CPUS, PRODUCER_CPUS, WORKER_CPUS = "0", {1}, "2,3"

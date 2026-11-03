@@ -438,6 +438,49 @@ pytest -m e2e                          # needs a running Kafka broker (scripts/k
 
 ---
 
+## Operator vs. admin, and running staging + production side by side
+
+`python main.py` serves two separate single-page apps from one API: `/` (operator — Dashboard +
+Alerts only, the day-to-day view of whatever is currently running) and `/admin.html` (the full
+testing/training suite: Source replay, Models, Experiments). Pass `--app-mode operator` and the
+*backend itself* refuses every start/stop/train/inject route (404, not just hidden in the UI) —
+the deployment that watches real traffic should never be able to kick off a training job or a
+replay against itself, whether or not someone trusts the frontend.
+
+Training and testing write real state (Kafka messages, DB rows, trained model bundles), so doing
+it against the same instance that's watching live traffic is intentionally impossible. Instead,
+run two fully independent instances — each gets its own Kafka broker, database, and model
+directory, so nothing in one can affect the other:
+
+```bash
+# staging: full admin UI, for training/testing new models
+python main.py --port 8000 --app-mode full
+
+# production: operator UI only, a separate Kafka + DB + models/ dir, on another machine
+# or another terminal on the same one
+LOGSENTINEL_KAFKA_PORT=9192 \
+LOGSENTINEL_TOOLS=$HOME/.local/share/logsentinel-prod \
+LOGSENTINEL_DB=data/prod.db \
+python main.py --port 8001 --app-mode operator
+```
+
+`LOGSENTINEL_KAFKA_PORT` (default 9092) and `LOGSENTINEL_TOOLS` (default
+`~/.local/share/logsentinel`, also the Kafka/JDK install location) keep the two Kafka brokers from
+colliding; `LOGSENTINEL_DB` (default `data/logsentinel.db`) keeps the alert/model/run history
+separate. On two different machines none of this matters — just run one instance per machine with
+the right `--app-mode`.
+
+A model trained and validated in staging has to be deliberately promoted into production — copy
+its bundle directory into production's `models/`, then on the production instance:
+`POST /models/register` with that path, followed by `POST /models/{id}/activate`. (Production's
+API refuses this in operator mode — register and activate it there before switching that
+instance to `--app-mode operator`, or do it from a `--app-mode full` instance pointed at
+production's `LOGSENTINEL_DB`.)
+
+Run `python -m logsentinel.cleanup` (no flags) any time for a dry-run report of old run history,
+trained model bundles, and generated data — it shows exactly what's there, with sizes and ages,
+and deletes nothing until you add `--yes`. See `python -m logsentinel.cleanup --help`.
+
 ## Deployment note
 
 LogSentinel is built for local/trusted-network use: the API has no authentication. A public

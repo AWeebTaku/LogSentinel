@@ -14,7 +14,7 @@ const lastNonNull = <T,>(xs: T[], pick: (x: T) => number | null) => {
   return null;
 };
 
-export default function Dashboard() {
+export default function Dashboard({ variant = "admin" }: { variant?: "operator" | "admin" }) {
   const nav = useNavigate();
   const src = usePoll(api.currentSource, 2000);
   const run = src.data?.run ?? null;
@@ -34,9 +34,11 @@ export default function Dashboard() {
       <Page title="Dashboard" lead="Live throughput, lag, latency and alerts for the running pipeline.">
         <Notice error={error} title="API unavailable" />
         <Empty
-          title="No pipeline has run yet"
-          body="Start a source to replay HDFS logs through Kafka and the detection engine. Live metrics and alerts appear here within a few seconds."
-          action={{ label: "Open Source", onClick: () => nav("/source") }}
+          title="No data yet"
+          body={variant === "operator"
+            ? "Nothing is ingesting right now. Live metrics and alerts appear here once the detection engine is running."
+            : "Start a source to replay HDFS logs through Kafka and the detection engine. Live metrics and alerts appear here within a few seconds."}
+          action={variant === "operator" ? undefined : { label: "Open Source", onClick: () => nav("/source") }}
         />
       </Page>
     );

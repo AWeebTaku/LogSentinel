@@ -14,6 +14,7 @@ import time
 
 from confluent_kafka import Consumer, KafkaException, TopicPartition
 
+from ..common.config import KAFKA_BOOTSTRAP
 from ..store.db import connect, insert_alerts, insert_metrics
 from ..stream.wire import TOPIC_ALERTS, TOPIC_METRICS
 
@@ -101,7 +102,7 @@ def run(a) -> None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bootstrap", default="127.0.0.1:9092")
+    ap.add_argument("--bootstrap", default=KAFKA_BOOTSTRAP)
     ap.add_argument("--group", default="alert-sink")
     ap.add_argument("--batch", type=int, default=500)
     ap.add_argument("--exit-after-idle-s", type=float, default=0.0, help="exit after this long idle (tests)")

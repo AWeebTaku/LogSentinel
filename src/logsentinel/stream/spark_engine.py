@@ -22,6 +22,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ..common.config import KAFKA_BOOTSTRAP
+
 os.environ.setdefault("JAVA_HOME", str(Path.home() / ".local/share/logsentinel/jdk"))
 
 KAFKA_PKG = "org.apache.spark:spark-sql-kafka-0-10_2.13:{v}"
@@ -155,7 +157,7 @@ def make_functions(bundle_dir: str, min_lines: int, run_id: str, model_name: str
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bundle", required=True)
-    ap.add_argument("--bootstrap", default="127.0.0.1:9092")
+    ap.add_argument("--bootstrap", default=KAFKA_BOOTSTRAP)
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--run-id", default="spark")
     ap.add_argument("--expected-rows", type=int, default=0, help="stop after this many Kafka rows (events plus EOS markers)")

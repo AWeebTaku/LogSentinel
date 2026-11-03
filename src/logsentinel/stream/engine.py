@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 from confluent_kafka import Consumer, Producer
 
+from ..common.config import KAFKA_BOOTSTRAP
 from ..models.bundle import Bundle, Scorer
 from .sessionizer import Sessionizer
 from .wire import TOPIC_ALERTS, TOPIC_METRICS, TOPIC_RAW, hdfs_log_time
@@ -208,7 +209,7 @@ def run(a) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bundle", required=True, help="bundle dir, or active:<dataset> from the model registry")
-    ap.add_argument("--bootstrap", default="127.0.0.1:9092")
+    ap.add_argument("--bootstrap", default=KAFKA_BOOTSTRAP)
     ap.add_argument("--group", default="logsentinel-engine")
     ap.add_argument("--worker-id", type=int, default=0)
     ap.add_argument("--batch", type=int, default=2000, help="max messages per consume() call")
