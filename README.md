@@ -508,6 +508,18 @@ action), but nothing that tests or trains is ever reachable, even by a direct AP
 separate machines, just run one instance per machine with the right `--app-mode`; none of the port/
 env-var juggling matters since each machine only ever runs one instance.
 
+### Retraining
+
+`make retrain-feedback` (`python -m logsentinel.models.retrain_feedback`) retrains folding in
+confirmed false positives as extra normal training examples — a false positive is, by definition,
+a session the detector wrongly flagged as anomalous, which is free real feedback. It only
+*registers* the new bundle in staging's own database (never activates or promotes it), so it's
+always safe to run — including on a schedule (cron / systemd timer) — and never changes what's
+actually running until you review it on the Models page and decide to Activate/Promote yourself.
+It skips retraining outright if there aren't at least `--min-false-positives` (default 10) to
+learn from. There's no equivalent for fresh live traffic yet — that needs a real log source feeding
+training data over time, which doesn't exist until a real log shipper replaces `live_feed.py`.
+
 Run `make clean` (or `python -m logsentinel.cleanup`, same thing) any time for a dry-run report of
 old run history, trained model bundles, and generated data — it shows exactly what's there, with
 sizes and ages, and deletes nothing until you add `--yes`. See `python -m logsentinel.cleanup

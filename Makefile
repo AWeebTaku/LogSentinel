@@ -1,6 +1,6 @@
 PY = .venv/bin/python
 
-.PHONY: data test lint ui ui-test perf perf-report staging production live-feed clean promote
+.PHONY: data test lint ui ui-test perf perf-report staging production live-feed clean promote retrain-feedback
 data:            ## download + build session splits (HDFS_v1, BGL)
 	$(PY) -m logsentinel.data.download
 	$(PY) -m logsentinel.data.build
@@ -19,7 +19,7 @@ perf-report:        ## regenerate tables and figures from stored runs
 	$(PY) -m logsentinel.experiments.perf_report
 
 # ---- running the app (see README.md, "Operator vs. admin") -------------------------------------
-staging:             ## admin UI at :8000/admin.html -- train/test models here
+staging:             ## admin UI at :8000 -- train/test models here
 	$(PY) main.py --port 8000 --app-mode full
 production:          ## operator UI at :8001/ -- isolated Kafka+DB, never trains/tests
 	LOGSENTINEL_KAFKA_PORT=9192 \
@@ -30,5 +30,7 @@ live-feed:           ## standalone external log generator -- simulates a real sy
 	$(PY) -m logsentinel.stream.live_feed
 promote:             ## promote a trained bundle to production's own DB: make promote BUNDLE=models/<name>
 	$(PY) -m logsentinel.promote $(BUNDLE)
+retrain-feedback:    ## retrain folding in confirmed false positives; registers to staging, never activates/promotes
+	$(PY) -m logsentinel.models.retrain_feedback
 clean:               ## report old runs/models/data (see python -m logsentinel.cleanup --help for --yes)
 	$(PY) -m logsentinel.cleanup
