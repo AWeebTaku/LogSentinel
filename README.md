@@ -438,26 +438,49 @@ pytest -m e2e                          # needs a running Kafka broker (scripts/k
 
 ---
 
-## Operator vs. admin, and running staging + production side by side
+## Operator vs. admin
 
-`python main.py` serves two separate single-page apps from one API: `/` (operator — Dashboard +
-Alerts only, the day-to-day view of whatever is currently running) and `/admin.html` (the full
-testing/training suite: Source replay, Models, Experiments). Pass `--app-mode operator` and the
-*backend itself* refuses every start/stop/train/inject route (404, not just hidden in the UI) —
-the deployment that watches real traffic should never be able to kick off a training job or a
-replay against itself, whether or not someone trusts the frontend.
+`python main.py` (just that, nothing extra) already serves two separate single-page apps from the
+one instance you just started:
 
-Training and testing write real state (Kafka messages, DB rows, trained model bundles), so doing
-it against the same instance that's watching live traffic is intentionally impossible. Instead,
-run two fully independent instances — each gets its own Kafka broker, database, and model
-directory, so nothing in one can affect the other:
+- **`http://localhost:8000/` — operator.** Dashboard, Alerts, and a trimmed-down Source page for
+  starting/stopping its own live ingestion — nothing that trains or tests. Starting/stopping
+  ingestion is an operator action, not a testing one: it's how the thing operator mode exists to
+  watch actually gets started. There's no "inject a scenario" here and no model picker (it always
+  runs whichever model was promoted to it) — those stay admin-only, refused server-side even by a
+  direct API call. This is the role of whoever's job is to *watch* the system — in a real org,
+  think a SOC/NOC analyst or whoever's on alert-triage duty, not necessarily the same person who
+  set the system up.
+- **`http://localhost:8000/admin.html` — admin.** The full testing/training suite (Source replay
+  with scenario/injection controls, Models, Experiments), plus Dashboard and Alerts for context.
+  This is the role of whoever *builds and maintains* the system — trains and validates models,
+  runs test replays, reviews benchmark experiments.
+
+There is currently no real log shipper wired up (that part of a real deployment doesn't exist
+yet), so the operator's Source page still replays the same bundled test dataset the admin side
+uses. On one shared instance this is still the same single pipeline underneath — only one run at a
+time, whoever starts it — so the real separation described below is what actually keeps admin's
+testing traffic and the operator's own run from interfering with each other. When a real log
+source exists, it plugs into the same `logs-raw` Kafka topic and the operator's Start/Stop
+controls work unchanged.
+
+On one instance like this, both windows share the same backend/database, so a model the admin
+activates shows up for the operator instantly — there's nothing to pass between them, it's the
+same state. That's fine for trying both UIs out, but it also means an admin running a test replay
+is replaying it against the exact same live data the operator is watching.
+
+### Real isolation: separate staging and production instances
+
+If training/testing should never be able to touch what's actually watching real logs — the
+recommended setup for actual use — run two **fully independent** instances instead. Each gets its
+own Kafka broker and database, so nothing in one can affect the other at all:
 
 ```bash
-# staging: full admin UI, for training/testing new models
+# staging: full admin UI, for training/testing new models, on your own machine
 python main.py --port 8000 --app-mode full
 
-# production: operator UI only, a separate Kafka + DB + models/ dir, on another machine
-# or another terminal on the same one
+# production: operator UI only, a separate Kafka + DB, on another machine (ideally)
+# or another terminal on the same one for now
 LOGSENTINEL_KAFKA_PORT=9192 \
 LOGSENTINEL_TOOLS=$HOME/.local/share/logsentinel-prod \
 LOGSENTINEL_DB=data/prod.db \
@@ -468,14 +491,24 @@ python main.py --port 8001 --app-mode operator
 `~/.local/share/logsentinel`, also the Kafka/JDK install location) keep the two Kafka brokers from
 colliding; `LOGSENTINEL_DB` (default `data/logsentinel.db`) keeps the alert/model/run history
 separate. On two different machines none of this matters — just run one instance per machine with
-the right `--app-mode`.
+the right `--app-mode`. `--app-mode operator` also makes the *backend itself* refuse every
+train/inject/experiment route (404, not just hidden in the UI) — starting/stopping its own
+ingestion stays available (that's an operator action), but nothing that tests or trains is ever
+reachable, even by a direct API call.
 
-A model trained and validated in staging has to be deliberately promoted into production — copy
-its bundle directory into production's `models/`, then on the production instance:
-`POST /models/register` with that path, followed by `POST /models/{id}/activate`. (Production's
-API refuses this in operator mode — register and activate it there before switching that
-instance to `--app-mode operator`, or do it from a `--app-mode full` instance pointed at
-production's `LOGSENTINEL_DB`.)
+With this setup, a model trained and validated in staging does **not** automatically reach
+production — that's the point. Once you're satisfied with it (check its metrics on the Models
+page), promote it deliberately:
+
+```bash
+python -m logsentinel.promote models/<bundle-name> --to data/prod.db
+```
+
+This registers the bundle in production's own database and makes it the active model — no need
+for production's API to be reachable or temporarily switched out of operator mode. On one machine,
+both instances already share the same `models/` folder on disk, so there's nothing to copy; on
+separate machines, copy/rsync the bundle directory over first. See `python -m logsentinel.promote
+--help`.
 
 Run `python -m logsentinel.cleanup` (no flags) any time for a dry-run report of old run history,
 trained model bundles, and generated data — it shows exactly what's there, with sizes and ages,
