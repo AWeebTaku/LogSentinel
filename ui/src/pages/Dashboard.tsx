@@ -36,9 +36,9 @@ export default function Dashboard({ variant = "admin" }: { variant?: "operator" 
         <Empty
           title="No data yet"
           body={variant === "operator"
-            ? "Nothing is ingesting right now. Live metrics and alerts appear here once the detection engine is running."
+            ? "Nothing is ingesting right now. Start watching under Source to begin, once a log source is feeding logs-raw."
             : "Start a source to replay HDFS logs through Kafka and the detection engine. Live metrics and alerts appear here within a few seconds."}
-          action={variant === "operator" ? undefined : { label: "Open Source", onClick: () => nav("/source") }}
+          action={{ label: "Open Source", onClick: () => nav("/source") }}
         />
       </Page>
     );
@@ -54,11 +54,15 @@ export default function Dashboard({ variant = "admin" }: { variant?: "operator" 
           <RunStatusTag status={run.status} />
           <div className="muted">{prog?.phase && prog.phase !== run.status ? `Phase: ${prog.phase}, ` : ""}{prog?.scenario ? `scenario: ${prog.scenario}` : ""}</div>
           <div style={{ flex: 1, minWidth: "16rem" }}>
-            <ProgressBar
-              label="Replay progress" size="small" value={pct} max={100}
-              helperText={`${fmtInt(prog?.sent)} of ${fmtInt(prog?.total)} events`}
-              status={run.status === "failed" ? "error" : run.status === "running" ? "active" : "finished"}
-            />
+            {prog?.total ? (
+              <ProgressBar
+                label="Replay progress" size="small" value={pct} max={100}
+                helperText={`${fmtInt(prog?.sent)} of ${fmtInt(prog?.total)} events`}
+                status={run.status === "failed" ? "error" : run.status === "running" ? "active" : "finished"}
+              />
+            ) : (
+              <span className="muted">{run.status === "running" ? "Watching live, no fixed length" : "Not running"}</span>
+            )}
           </div>
         </div>
       </div>

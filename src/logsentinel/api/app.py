@@ -25,14 +25,17 @@ from . import jobs
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
 
 # "full" (default: local dev, main.py) serves everything. "operator" is the production-facing
-# deployment: live monitoring, alert triage, and starting/stopping its own live ingestion --
-# nothing that trains or tests anything. Gated server-side (not just hidden in the UI) so a stray
-# curl or a tampered frontend can't reach training/testing controls from an operator-mode process.
+# deployment: live monitoring, alert triage, and starting/stopping its own engine against whatever
+# is already on logs-raw -- nothing that trains, tests, or produces data itself. Gated server-side
+# (not just hidden in the UI) so a stray curl or a tampered frontend can't reach training/testing
+# controls from an operator-mode process.
 #
-# Starting/stopping a source is an operator action here, not a testing one -- it's how the live
-# ingestion that operator mode exists to watch actually gets started. Injecting a synthetic
-# anomaly burst and the "spike" traffic scenario stay admin-only: those are testing simulations,
-# never something you'd want available against whatever is actually running in production.
+# /sources/watch (not /sources/start) is operator's version of "start": it only ever launches
+# engine workers that consume logs-raw, never a producer -- the log source is meant to be external
+# (see stream/live_feed.py for the stand-in). /sources/start (the bounded test-dataset replay),
+# injecting a synthetic anomaly burst, and the "spike" scenario stay admin-only: those are testing
+# simulations, never something you'd want available against whatever is actually running in
+# production.
 APP_MODE = os.environ.get("LOGSENTINEL_APP_MODE", "full")
 
 
@@ -41,7 +44,7 @@ def _operator_allowed(method: str, path: str) -> bool:
         return True
     if method == "GET" and (path == "/sources/current" or path == "/metrics"):
         return True
-    if method == "POST" and (path == "/sources/start" or (path.startswith("/sources/") and path.endswith("/stop"))):
+    if method == "POST" and (path == "/sources/watch" or (path.startswith("/sources/") and path.endswith("/stop"))):
         return True
     if path.startswith("/alerts"):
         return method in ("GET", "PATCH")
@@ -77,6 +80,14 @@ class StartSource(BaseModel):
     sessions: int = Field(10000, ge=100, le=172_519, description="test sessions to replay")
     workers: int = Field(1, ge=1, le=4)
     scenario: Literal["normal", "spike"] = "normal"
+    bundle: str = Field("active:hdfs", pattern=jobs.BUNDLE_RE)
+
+
+class WatchSource(BaseModel):
+    """Operator's start: engine workers only, consuming whatever is already on logs-raw -- see
+    stream/watch.py. No rate/sessions/scenario, because this never produces anything itself."""
+    workers: int = Field(1, ge=1, le=4)
+    partitions: int = Field(6, ge=1, le=12)
     bundle: str = Field("active:hdfs", pattern=jobs.BUNDLE_RE)
 
 
@@ -242,16 +253,34 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
                            "--params", json.dumps(params)], rd)
         return db.create_run(con, run_id, "source", params, pid=pid, run_dir=str(rd))
 
+    @app.post("/sources/watch", status_code=202)
+    def watch_source(body: WatchSource, con=Depends(get_con)):
+        """Operator's start: engine only, against whatever is already on logs-raw (see
+        stream/watch.py and stream/live_feed.py, the external stand-in for a real log source)."""
+        if not jobs.kafka_up():
+            raise HTTPException(503, f"Kafka is not running on {KAFKA_BOOTSTRAP} (scripts/kafka.sh start)")
+        busy = jobs.running_job(con)
+        if busy:
+            raise HTTPException(409, f"{busy['kind']} {busy['id']!r} is already running; stop it first")
+        if body.bundle.startswith("active:") and db.active_model(con, body.bundle.split(":", 1)[1]) is None:
+            raise HTTPException(409, "no active model: promote one to this instance first (see README.md)")
+        run_id = f"src-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}"
+        rd = ROOT / "results" / "sources" / run_id
+        params = body.model_dump()
+        pid = jobs.launch([sys.executable, "-m", "logsentinel.stream.watch", "--run-id", run_id,
+                           "--params", json.dumps(params)], rd)
+        return db.create_run(con, run_id, "watch", params, pid=pid, run_dir=str(rd))
+
     @app.get("/sources/current")
     def current_source(con=Depends(get_con)):
-        runs = [jobs.refresh(con, r) for r in db.list_runs(con, "source")]
+        runs = [jobs.refresh(con, r) for r in db.list_runs(con) if r["kind"] in ("source", "watch")]
         run = next((r for r in runs if r["status"] == "running"), runs[0] if runs else None)
         return {"run": run, "progress": jobs.progress(run) if run else {}}
 
     @app.post("/sources/{run_id}/stop")
     def stop_source(run_id: str, con=Depends(get_con)):
         run = db.get_run(con, run_id)
-        if run is None or run["kind"] != "source":
+        if run is None or run["kind"] not in ("source", "watch"):
             raise HTTPException(404, "source not found")
         run = jobs.refresh(con, run)
         if run["status"] != "running":

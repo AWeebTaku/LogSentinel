@@ -141,21 +141,23 @@ def test_operator_mode_refuses_training_but_keeps_monitoring_and_its_own_ingesti
     assert op.patch("/alerts/1", json={"status": "acknowledged"}).status_code == 200
     # reaches the real handler either way (no Kafka -> 503, no active model -> 409), proving the
     # gate let it through rather than refusing the route outright (404)
-    assert op.post("/sources/start", json={}).status_code != 404
+    assert op.post("/sources/watch", json={}).status_code != 404
+    assert op.post("/sources/start", json={}).status_code == 404     # admin-only: bounded test replay
     assert op.get("/models").status_code == 404
     assert op.get("/runs").status_code == 404
     assert op.post("/models/train", json={}).status_code == 404
     assert op.post("/experiments/run", json={}).status_code == 404
 
 
-def test_operator_gate_predicate_blocks_testing_but_allows_source_start_stop():
+def test_operator_gate_predicate_blocks_testing_but_allows_watch_start_stop():
     """Precise path-matching check for the operator gate (app.py's _operator_allowed), since a
     blocked route and a legitimate 404 from business logic (e.g. an unknown run id) are otherwise
     indistinguishable by status code alone in an integration test."""
     from logsentinel.api.app import _operator_allowed as allowed
 
-    assert allowed("POST", "/sources/start")
+    assert allowed("POST", "/sources/watch")
     assert allowed("POST", "/sources/src-123/stop")
+    assert not allowed("POST", "/sources/start")                    # admin-only: bounded test replay
     assert not allowed("POST", "/sources/src-123/inject")       # testing-only: stays admin-only
     assert not allowed("GET", "/sources/src-123/injections")    # testing-only artifact
     assert not allowed("POST", "/models/train")

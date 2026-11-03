@@ -58,44 +58,58 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
         <Info title="No active model">Register and activate a model under Models before starting a source.</Info>
       )}
       {isOp && (
-        <Info title="Placeholder data source">
-          There's no real log feed wired up yet, so this still replays the bundled test dataset like
-          the admin side does -- it's just a separate run, on this instance's own Kafka, using
-          whatever model was promoted here. When a real log shipper exists, it plugs into this same
-          Kafka topic (logs-raw) and this page's Start/Stop controls work unchanged.
+        <Info title="External log source">
+          This never produces log traffic itself -- it only starts the detection engine watching
+          whatever arrives on Kafka's logs-raw topic. Run a log source separately: for now, before a
+          real log shipper exists, that's <code>python -m logsentinel.stream.live_feed</code> (or{" "}
+          <code>make live-feed</code>), which stands in for a real system continuously generating
+          logs. When a real shipper exists, it publishes to the same topic and nothing here changes.
         </Info>
       )}
 
       <div className="grid-2">
         <div className="panel">
-          <h2>Start a run</h2>
-          <div className="row">
-            <NumberInput id="s-rate" label="Events per second" min={10} max={200000} step={500} value={rate}
-              disabled={running} onChange={(_e, { value }) => setRate(Number(value))}
-              helperText={isOp ? undefined : "Spike runs 10x this mid-stream"} />
-            <NumberInput id="s-sessions" label="Sessions to replay" min={100} max={172519} step={1000} value={sessions}
-              disabled={running} onChange={(_e, { value }) => setSessions(Number(value))} helperText="About 19 lines each" />
-          </div>
-          {!isOp && (
-            <div className="row" style={{ marginTop: "1rem" }}>
-              <Select id="s-scn" labelText="Scenario" value={scenario} disabled={running} onChange={(e) => setScenario(e.target.value)}>
-                <SelectItem value="normal" text="Normal traffic" />
-                <SelectItem value="spike" text="Traffic spike (10x for 20% of the run)" />
-                <SelectItem value="drift" text="Concept drift (not available yet)" disabled />
-              </Select>
-              <Select id="s-workers" labelText="Engine workers" value={String(workers)} disabled={running} onChange={(e) => setWorkers(Number(e.target.value))}>
+          <h2>{isOp ? "Start watching" : "Start a run"}</h2>
+          {isOp ? (
+            <div className="row">
+              <Select id="s-workers-op" labelText="Engine workers" value={String(workers)} disabled={running} onChange={(e) => setWorkers(Number(e.target.value))}>
                 {[1, 2, 4].map((n) => <SelectItem key={n} value={String(n)} text={String(n)} />)}
               </Select>
-              <Select id="s-model" labelText="Model" value={bundle} disabled={running} onChange={(e) => setBundle(e.target.value)}>
-                <SelectItem value="active:hdfs" text={active ? `Active: ${active.name} v${active.version}` : "Active model"} />
-                {(models.data?.items ?? []).map((m) => (
-                  <SelectItem key={m.id} value={`models/${m.path.split("/").pop()}`} text={`${m.name} v${m.version}`} />
-                ))}
-              </Select>
             </div>
+          ) : (
+            <>
+              <div className="row">
+                <NumberInput id="s-rate" label="Events per second" min={10} max={200000} step={500} value={rate}
+                  disabled={running} onChange={(_e, { value }) => setRate(Number(value))} helperText="Spike runs 10x this mid-stream" />
+                <NumberInput id="s-sessions" label="Sessions to replay" min={100} max={172519} step={1000} value={sessions}
+                  disabled={running} onChange={(_e, { value }) => setSessions(Number(value))} helperText="About 19 lines each" />
+              </div>
+              <div className="row" style={{ marginTop: "1rem" }}>
+                <Select id="s-scn" labelText="Scenario" value={scenario} disabled={running} onChange={(e) => setScenario(e.target.value)}>
+                  <SelectItem value="normal" text="Normal traffic" />
+                  <SelectItem value="spike" text="Traffic spike (10x for 20% of the run)" />
+                  <SelectItem value="drift" text="Concept drift (not available yet)" disabled />
+                </Select>
+                <Select id="s-workers" labelText="Engine workers" value={String(workers)} disabled={running} onChange={(e) => setWorkers(Number(e.target.value))}>
+                  {[1, 2, 4].map((n) => <SelectItem key={n} value={String(n)} text={String(n)} />)}
+                </Select>
+                <Select id="s-model" labelText="Model" value={bundle} disabled={running} onChange={(e) => setBundle(e.target.value)}>
+                  <SelectItem value="active:hdfs" text={active ? `Active: ${active.name} v${active.version}` : "Active model"} />
+                  {(models.data?.items ?? []).map((m) => (
+                    <SelectItem key={m.id} value={`models/${m.path.split("/").pop()}`} text={`${m.name} v${m.version}`} />
+                  ))}
+                </Select>
+              </div>
+            </>
           )}
           <div className="actions">
-            <Button renderIcon={Play} disabled={running || busy} onClick={() => act(() => api.startSource({ rate, sessions, workers, scenario, bundle }), "Source started.")}>Start source</Button>
+            <Button renderIcon={Play} disabled={running || busy}
+              onClick={() => act(
+                () => (isOp ? api.watchSource({ workers }) : api.startSource({ rate, sessions, workers, scenario, bundle })),
+                isOp ? "Watching for live traffic." : "Source started.",
+              )}>
+              {isOp ? "Start watching" : "Start source"}
+            </Button>
             <Button kind="danger--tertiary" renderIcon={Stop} disabled={!running || busy} onClick={() => run && act(() => api.stopSource(run.id), "Stop requested. The engine drains and flushes first.")}>Stop</Button>
           </div>
         </div>
@@ -104,6 +118,18 @@ export default function Source({ variant = "admin" }: { variant?: "operator" | "
           <h2>Current run</h2>
           {cur.loading ? <SkeletonText paragraph lineCount={4} /> : !run ? (
             <p className="muted">No run yet. Start one on the left.</p>
+          ) : isOp ? (
+            <>
+              <DefList items={[
+                ["Run", <span className="num">{run.id}</span>], ["Status", <RunStatusTag status={run.status} />],
+                ["Phase", prog?.phase && prog.phase !== run.status ? prog.phase : "same as status"],
+                ["Started", ago(run.created_ns)], ["Workers", String(prog?.workers ?? "n/a")],
+              ]} />
+              <p className="muted" style={{ marginTop: "1rem" }}>
+                {running ? "Watching logs-raw for events. No fixed end -- stop it when you're done." : "Not running."}
+              </p>
+              {run.status === "failed" && <p className="muted" style={{ marginTop: ".75rem" }}>The run failed. See the supervisor log under results/sources/{run.id}/log.</p>}
+            </>
           ) : (
             <>
               <DefList items={[

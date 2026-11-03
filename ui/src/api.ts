@@ -91,6 +91,7 @@ export const api = {
   currentSource: () => req<{ run: Run | null; progress: Progress }>("/sources/current"),
   startSource: (b: { rate: number; sessions: number; workers: number; scenario: string; bundle?: string }) =>
     post<Run>("/sources/start", b),
+  watchSource: (b: { workers: number; partitions?: number; bundle?: string }) => post<Run>("/sources/watch", b),
   stopSource: (id: string) => post<Run>(`/sources/${id}/stop`),
   inject: (id: string, count: number) =>
     post<{ injection_id: number; count: number; lines: number }>(`/sources/${id}/inject`, { scenario: "anomaly_burst", count }),
