@@ -29,6 +29,6 @@ production:          ## operator UI at :8001/ -- isolated Kafka+DB, never trains
 live-feed:           ## standalone external log generator -- simulates a real system producing logs
 	$(PY) -m logsentinel.stream.live_feed
 promote:             ## promote a trained bundle to production's own DB: make promote BUNDLE=models/<name>
-	$(PY) -m logsentinel.promote $(BUNDLE) --to data/prod.db
+	$(PY) -m logsentinel.promote $(BUNDLE)
 clean:               ## report old runs/models/data (see python -m logsentinel.cleanup --help for --yes)
 	$(PY) -m logsentinel.cleanup

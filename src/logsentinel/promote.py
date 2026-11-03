@@ -17,6 +17,7 @@ first (its path must resolve there too), then run this pointed at the target's d
 import argparse
 from pathlib import Path
 
+from .common.config import PRODUCTION_DB
 from .store import db
 
 
@@ -31,7 +32,9 @@ def promote(bundle_dir: Path, to_db: Path, activate: bool = True, name: str | No
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("bundle", help="trained model bundle directory (needs bundle.joblib + meta.json)")
-    ap.add_argument("--to", required=True, metavar="DB_PATH", help="target instance's database file (its LOGSENTINEL_DB)")
+    ap.add_argument("--to", default=PRODUCTION_DB, metavar="DB_PATH",
+                    help=f"target instance's database file (its LOGSENTINEL_DB; default: {PRODUCTION_DB}, "
+                         "or set LOGSENTINEL_PRODUCTION_DB)")
     ap.add_argument("--name", default=None, help="registered name (default: the bundle directory's own name)")
     ap.add_argument("--no-activate", action="store_true", help="register only; don't make it the active model")
     a = ap.parse_args()

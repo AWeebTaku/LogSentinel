@@ -470,14 +470,15 @@ broker, database, and model directory (`LOGSENTINEL_KAFKA_PORT`, `LOGSENTINEL_TO
 a model trained in staging does **not** automatically reach production. Two things cross the gap
 deliberately:
 
-**Promoting a model**, once you're satisfied with its metrics on the admin Models page:
+**Promoting a model**, once you're satisfied with its metrics on the admin Models page: click
+**Promote to production** right there, or from the command line:
 ```bash
 make promote BUNDLE=models/<bundle-name>
 ```
-Registers it in production's own database and activates it — no need for production's API to be
-reachable or switched out of operator mode. Both instances already share the same `models/` folder
-on one machine, so there's nothing to copy; across separate machines, copy/rsync the bundle
-directory first.
+Both do the same thing — register it in production's own database and activate it — no need for
+production's API to be reachable or switched out of operator mode. Both instances already share
+the same `models/` folder on one machine, so there's nothing to copy; across separate machines,
+copy/rsync the bundle directory first.
 
 **Log traffic.** There's no real log shipper wired up yet, so operator's "Start source" never
 produces anything itself (unlike admin's bounded test replay) — it only starts the detection

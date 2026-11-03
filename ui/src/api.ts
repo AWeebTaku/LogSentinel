@@ -99,6 +99,7 @@ export const api = {
   models: () => req<{ items: Model[] }>("/models"),
   registerModel: (path: string, name?: string) => post<Model>("/models/register", { path, name: name || undefined }),
   activateModel: (id: number) => post<Model>(`/models/${id}/activate`),
+  promoteModel: (id: number) => post<Model>(`/models/${id}/promote`),
   trainModel: (b: Record<string, unknown>) => post<Run>("/models/train", b),
   runs: (kind?: string) => req<{ items: Run[] }>(`/runs${q({ kind })}`),
   run: (id: string) => req<Run>(`/runs/${id}`),

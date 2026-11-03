@@ -4,7 +4,7 @@ import {
 } from "@carbon/react";
 import { useState } from "react";
 import { api, type Model } from "../api";
-import { Empty, Notice, Page, RunStatusTag } from "../components/common";
+import { Empty, Info, Notice, Page, RunStatusTag } from "../components/common";
 import { ago } from "../format";
 import { usePoll } from "../hooks";
 
@@ -53,6 +53,14 @@ export default function Models() {
     <Page title="Models" lead="Registered detection bundles. The active model is what new sources and engines load.">
       <Notice error={err ?? models.error} />
       {msg && <p className="muted" role="status" style={{ marginBottom: ".5rem" }}>{msg}</p>}
+      <Info title="Promote to production">
+        Registers and activates a bundle directly in production's own database (its own
+        <code>LOGSENTINEL_DB</code>, by default <code>data/prod.db</code>; set
+        <code>LOGSENTINEL_PRODUCTION_DB</code> to point elsewhere) -- the same thing{" "}
+        <code>make promote</code>/<code>python -m logsentinel.promote</code> does. Production's own
+        API is never involved, so this works whether or not it's running. On separate machines,
+        copy/rsync the bundle folder to production's <code>models/</code> first.
+      </Info>
 
       <div className="panel">
         <h2>Registry</h2>
@@ -80,6 +88,10 @@ export default function Models() {
                     <Button size="sm" kind="tertiary" disabled={m.status === "active"}
                       onClick={() => act(() => api.activateModel(m.id), `${m.name} v${m.version} is now active. Restart engines to use it.`)}>
                       Activate
+                    </Button>{" "}
+                    <Button size="sm" kind="ghost"
+                      onClick={() => act(() => api.promoteModel(m.id), `${m.name} v${m.version} promoted to production: registered and activated there.`)}>
+                      Promote to production
                     </Button>
                   </TableCell>
                 </TableRow>

@@ -73,6 +73,24 @@ def test_model_registry_endpoints(api, bundle_dir):
     assert api.get("/models/999").status_code == 404
 
 
+def test_promote_writes_directly_to_the_production_db(api, bundle_dir, tmp_path, monkeypatch):
+    """The admin UI's "Promote to production" button (and `make promote`) write straight to
+    production's own DB file -- never through production's own API, which would refuse it anyway
+    in operator mode. See logsentinel.promote and PRODUCTION_DB in common/config.py."""
+    import logsentinel.api.app as app_module
+
+    prod_db = tmp_path / "prod.db"
+    monkeypatch.setattr(app_module, "PRODUCTION_DB", prod_db)
+    r = api.post("/models/register", json={"path": f"models/{bundle_dir.name}"})
+    mid = r.json()["id"]
+
+    assert api.post(f"/models/{mid}/promote").json()["status"] == "active"
+    with db.connect(prod_db) as con:
+        assert db.active_model(con, "hdfs")["name"] == bundle_dir.name
+
+    assert api.post("/models/999/promote").status_code == 404
+
+
 def test_registry_and_import_reject_paths_outside_project(api):
     assert api.post("/models/register", json={"path": "../../etc"}).status_code == 400
     assert api.post("/models/register", json={"path": "/tmp"}).status_code == 400

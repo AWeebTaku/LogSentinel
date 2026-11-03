@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ..common.config import KAFKA_BOOTSTRAP, ROOT
+from ..common.config import KAFKA_BOOTSTRAP, PRODUCTION_DB, ROOT
 from ..store import db
 from . import jobs
 
@@ -223,6 +223,22 @@ def create_app(db_path: Path | None = None, app_mode: str | None = None) -> Fast
         if m is None:
             raise HTTPException(404, "model not found")
         return m
+
+    @app.post("/models/{model_id}/promote")
+    def promote_model(model_id: int, con=Depends(get_con)):
+        """Register + activate this bundle in production's own database (see promote.py) -- the
+        only sanctioned way a model crosses from staging into production. Writes directly to the
+        target DB file, same as `make promote`/`python -m logsentinel.promote`: doesn't need
+        production's API reachable or out of operator mode, since operator mode would refuse this
+        exact write anyway."""
+        from ..promote import promote as do_promote
+        m = db.get_model(con, model_id)
+        if m is None:
+            raise HTTPException(404, "model not found")
+        try:
+            return do_promote(Path(m["path"]), PRODUCTION_DB)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from e
 
     @app.put("/models/{model_id}/metrics")
     def put_metrics(model_id: int, metrics: dict, con=Depends(get_con)):
