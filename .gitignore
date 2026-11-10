@@ -55,3 +55,6 @@ ui/dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local Claude Code session state
+.claude_session

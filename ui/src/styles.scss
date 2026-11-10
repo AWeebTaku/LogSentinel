@@ -1,6 +1,21 @@
 @use '@carbon/react' with ($css--font-face: false);   // fonts are self-hosted via @fontsource (see main.tsx)
 
 // Single design system (Carbon). Only layout helpers live here; colors and type come from Carbon tokens.
+// Amber accent to match the portfolio card (#e8a33d), overriding Carbon's blue interactive tokens.
+.cds--g100 {
+  --cds-interactive: #e8a33d;
+  --cds-link-primary: #f0b95e;
+  --cds-focus: #e8a33d;
+  --cds-button-primary: #e8a33d;
+  --cds-text-on-color: #161616;
+}
+.cds--white {
+  --cds-interactive: #b87514;
+  --cds-link-primary: #b87514;
+  --cds-focus: #b87514;
+  --cds-button-primary: #b87514;
+  --cds-text-on-color: #161616;
+}
 body { margin: 0; background: var(--cds-background); color: var(--cds-text-primary); }
 .page { padding: 1.25rem 1.5rem 3rem; max-width: 1680px; margin: 0 auto; }
 .page-head { margin-bottom: 1rem; }
