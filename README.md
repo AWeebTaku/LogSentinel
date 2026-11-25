@@ -1,6 +1,8 @@
 # LogSentinel
 
-[![CI](https://github.com/AWeebTaku/LogSentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/AWeebTaku/LogSentinel/actions/workflows/ci.yml)
+<!-- badges:start -->
+[![CI](https://github.com/AWeebTaku/LogSentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/AWeebTaku/LogSentinel/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/AWeebTaku/LogSentinel/blob/main/LICENSE) ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white) ![Apache Kafka](https://img.shields.io/badge/Apache%20Kafka-231F20?logo=apachekafka&logoColor=white) ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=white)
+<!-- badges:end -->
 
 LogSentinel is a real-time log anomaly detection system. It ingests a stream of application/system
 logs, parses them into templates, vectorizes them, and scores them with unsupervised machine-learning
