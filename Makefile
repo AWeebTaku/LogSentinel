@@ -1,6 +1,6 @@
 PY = .venv/bin/python
 
-.PHONY: data test lint ui ui-test perf perf-report staging production live-feed clean promote retrain-feedback playground playground-cli
+.PHONY: data test lint ui ui-test perf perf-report demo staging production live-feed clean promote retrain-feedback playground playground-cli
 data:            ## download + build session splits (HDFS_v1, BGL)
 	$(PY) -m logsentinel.data.download
 	$(PY) -m logsentinel.data.build
@@ -17,6 +17,18 @@ perf:               ## run E4/E5/E7 (about 2 h; resumable) then build the report
 	$(PY) -m logsentinel.experiments.perf_report
 perf-report:        ## regenerate tables and figures from stored runs
 	$(PY) -m logsentinel.experiments.perf_report
+
+# ---- one-command demo: train if needed, then launch admin UI ----------------------------------
+demo:                ## reviewer path: build data/model if missing, then `make staging`
+	@test -f data/processed/hdfs.chronological.sessions.jsonl.gz || $(MAKE) data
+	@test -d models/hdfs-drain-pca-early || { \
+		$(PY) -m logsentinel.models.train --dataset hdfs --parser drain --model pca \
+			--early-age 30 --early-model ae --out models/hdfs-drain-pca-early; \
+		$(PY) -m logsentinel.stream.pools; \
+	}
+	$(PY) -m logsentinel.promote models/hdfs-drain-pca-early --to data/logsentinel.db
+	@echo "Open http://localhost:8000/, go to Source, click Start source."
+	$(MAKE) staging
 
 # ---- running the app (see README.md, "Operator vs. admin") -------------------------------------
 staging:             ## admin UI at :8000 -- train/test models here

@@ -344,6 +344,9 @@ footer{padding:40px max(16px,env(safe-area-inset-left,0px)) calc(40px + env(safe
   </div>
 
   <p class="muted reveal" style="font-size:13px;margin-top:28px">Deployed, this sits as a detection layer feeding a SIEM, not replacing one, and the throughput figures above are single-host. The thesis states that caveat next to the claim, not buried in a limitations section.</p>
+
+  <h3 class="reveal" style="font-size:15px;margin-top:40px;color:var(--teal)">What I'd change next</h3>
+  <p class="muted reveal" style="margin-top:8px;font-size:13.5px">Kafka offsets auto-commit on a timer and open-session state lives only in process memory, so a crash loses in-flight session context (not stored logs — just the engine's progress through them). A real deployment needs that fixed before anything else here — likely Spark's own checkpointing, exercised for real this time, or an equivalent write-ahead log on the Python engine.</p>
 </section>
 
 </div>
